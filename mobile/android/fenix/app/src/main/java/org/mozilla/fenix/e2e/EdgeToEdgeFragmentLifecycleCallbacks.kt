@@ -10,7 +10,11 @@ import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.view.WindowManager
 import androidx.core.view.WindowCompat.enableEdgeToEdge
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat.Type.displayCutout
+import androidx.core.view.WindowInsetsCompat.Type.systemBars
 import androidx.core.view.doOnAttach
 import androidx.core.view.isEmpty
 import androidx.fragment.app.DialogFragment
@@ -56,12 +60,34 @@ class EdgeToEdgeFragmentLifecycleCallbacks : FragmentLifecycleCallbacks() {
             // Change the edge-to-edge behavior immediately after the new fragment is attached
             // to ensure an immediate change.
             fragment.view?.doOnAttach {
-                when (fragment is SystemInsetsPaddedFragment) {
-                    true -> setupPersistentInsets()
+                when (fragment) {
+                    is StatusBarEdgeToEdgeFragment -> setupStatusBarEdgeToEdgeInsets(fragment)
+                    is SystemInsetsPaddedFragment -> setupPersistentInsets()
                     else -> clearPersistentInsets()
                 }
             }
         }
+    }
+
+    private fun Window.setupStatusBarEdgeToEdgeInsets(fragment: StatusBarEdgeToEdgeFragment) {
+        val rootView = decorView.findViewById<View>(android.R.id.content)
+
+        ViewCompat.setOnApplyWindowInsetsListener(rootView) { _, windowInsets ->
+            val persistentInsets = windowInsets.getInsetsIgnoringVisibility(systemBars() or displayCutout())
+            val isInImmersiveMode =
+                attributes.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS != 0
+
+            if (isInImmersiveMode) {
+                rootView.setPadding(0, 0, 0, 0)
+                fragment.onTopInsetChanged(0)
+            } else {
+                rootView.setPadding(persistentInsets.left, 0, persistentInsets.right, 0)
+                fragment.onTopInsetChanged(persistentInsets.top)
+            }
+
+            windowInsets
+        }
+        ViewCompat.requestApplyInsets(rootView)
     }
 
     companion object {

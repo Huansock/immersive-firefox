@@ -12,6 +12,7 @@ import android.content.Intent.ACTION_MAIN
 import android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
@@ -27,6 +28,8 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager.LayoutParams.FLAG_SECURE
 import androidx.activity.BackEventCompat
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.annotation.CallSuper
 import androidx.annotation.IdRes
 import androidx.annotation.VisibleForTesting
@@ -470,6 +473,9 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
         // Must run after the edge-to-edge capable theme is applied by
         // `setupTheme` (or installSplashScreen). It must also be run before
         // the `setContent` starts attaching fragments.
+        enableEdgeToEdge(
+            navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+        )
         EdgeToEdgeFragmentLifecycleCallbacks.register(supportFragmentManager, window)
 
         // Checks if Activity is currently in PiP mode if launched from external intents, then exits it

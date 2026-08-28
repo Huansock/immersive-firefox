@@ -14,6 +14,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.accessibility.AccessibilityManager
 import android.webkit.MimeTypeMap
 import android.widget.Toast
@@ -76,6 +77,7 @@ import org.mozilla.focus.GleanMetrics.TrackingProtection
 import org.mozilla.focus.R
 import org.mozilla.focus.activity.FirefoxInstallationHelper
 import org.mozilla.focus.activity.MainActivity
+import org.mozilla.focus.browser.StatusBarScrollController
 import org.mozilla.focus.browser.integration.BrowserMenuCallbacks
 import org.mozilla.focus.browser.integration.BrowserMenuController
 import org.mozilla.focus.browser.integration.BrowserToolbarIntegration
@@ -96,6 +98,7 @@ import org.mozilla.focus.ext.requireComponents
 import org.mozilla.focus.ext.settings
 import org.mozilla.focus.ext.showAsFixed
 import org.mozilla.focus.ext.titleOrDomain
+import org.mozilla.focus.ext.updateTopInset
 import org.mozilla.focus.menu.browser.DefaultBrowserMenu
 import org.mozilla.focus.open.OpenWithFragment
 import org.mozilla.focus.session.ui.TabsPopup
@@ -140,6 +143,13 @@ class BrowserFragment : BaseFragment(), UserInteractionHandler, AccessibilityMan
     private lateinit var requestPermissionLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var downloadFileUtils: DownloadFileUtils
     private var tabsPopup: TabsPopup? = null
+    private var toolbarTopInset = 0
+    private var statusBarScrollController: StatusBarScrollController? = null
+    private val statusBarPreDrawListener =
+        ViewTreeObserver.OnPreDrawListener {
+            statusBarScrollController?.synchronize(binding.browserToolbar, toolbarTopInset)
+            true
+        }
 
     /** The ID of the tab associated with this fragment. */
     private val tabId: String
@@ -229,10 +239,24 @@ class BrowserFragment : BaseFragment(), UserInteractionHandler, AccessibilityMan
         initializeAppLinksFeature(view, components)
         initializeTopSitesFeature(view, components)
         customizeToolbar()
+        setupToolbarTopInset()
+        setupStatusBarScrolling()
         initializeUiBasedOnTabType(view, components)
         initializeMediaSessionFullscreenFeature(view, components)
         initializeSitePermissionsFeature(view)
         setupImeInsets(view)
+    }
+
+    private fun setupToolbarTopInset() {
+        binding.mainContent.onTopInsetChanged = { topInset ->
+            toolbarTopInset = topInset
+            binding.browserToolbar.updateTopInset(requireContext(), binding.engineView, topInset)
+        }
+    }
+
+    private fun setupStatusBarScrolling() {
+        statusBarScrollController = StatusBarScrollController(requireActivity().window, binding.root)
+        binding.browserToolbar.viewTreeObserver.addOnPreDrawListener(statusBarPreDrawListener)
     }
 
     private fun initializeFindInPageFeature(view: View, components: Components) {
@@ -665,6 +689,11 @@ class BrowserFragment : BaseFragment(), UserInteractionHandler, AccessibilityMan
     }
 
     override fun onDestroyView() {
+        binding.mainContent.onTopInsetChanged = null
+        binding.browserToolbar.viewTreeObserver.removeOnPreDrawListener(statusBarPreDrawListener)
+        statusBarScrollController?.finishShown()
+        statusBarScrollController = null
+
         super.onDestroyView()
 
         requireContext().accessibilityManager.removeAccessibilityStateChangeListener(this)
