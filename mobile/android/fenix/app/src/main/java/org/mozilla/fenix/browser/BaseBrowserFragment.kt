@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.storage.StorageManager
@@ -35,6 +36,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.content.getSystemService
+import androidx.core.graphics.ColorUtils
 import androidx.core.text.HtmlCompat
 import androidx.core.view.OnApplyWindowInsetsListener
 import androidx.core.view.isVisible
@@ -147,6 +149,7 @@ import mozilla.components.support.base.feature.PermissionsFeature
 import mozilla.components.support.base.feature.UserInteractionHandler
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.ktx.android.content.appName
+import mozilla.components.support.ktx.android.content.getColorFromAttr
 import mozilla.components.support.ktx.android.content.isEdgeToEdgeDisabled
 import mozilla.components.support.ktx.android.view.ImeInsetsSynchronizer
 import mozilla.components.support.ktx.android.view.enterImmersiveMode
@@ -199,7 +202,6 @@ import org.mozilla.fenix.components.toolbar.BottomToolbarContainerIntegration
 import org.mozilla.fenix.components.toolbar.BottomToolbarContainerView
 import org.mozilla.fenix.components.toolbar.BrowserNavigationBar
 import org.mozilla.fenix.components.toolbar.BrowserToolbarComposable
-import org.mozilla.fenix.components.toolbar.StatusBarScrollController
 import org.mozilla.fenix.components.toolbar.ToolbarContainerView
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.components.toolbar.ToolbarsIntegration
@@ -274,16 +276,10 @@ abstract class BaseBrowserFragment :
     @VisibleForTesting @Suppress("VariableNaming") internal var _browserToolbar: BrowserToolbarComposable? = null
     private var awesomeBarComposable: AwesomeBarComposable? = null
     private var statusBarTopInset = 0
-    private var statusBarScrollController: StatusBarScrollController? = null
-    private val statusBarPreDrawListener =
+    private var statusBarScrim: View? = null
+    private val statusBarScrimPreDrawListener =
         ViewTreeObserver.OnPreDrawListener {
-            statusBarScrollController?.synchronize(
-                toolbar = browserToolbar.layout,
-                topInset = statusBarTopInset,
-                shouldSynchronize =
-                    requireComponents.settings.toolbarPosition == ToolbarPosition.TOP &&
-                        fullScreenFeature.get()?.isFullScreen != true,
-            )
+            updateStatusBarScrimAlpha()
             true
         }
 
@@ -2359,9 +2355,8 @@ abstract class BaseBrowserFragment :
      * Dereference these views when the fragment view is destroyed to prevent memory leaks
      */
     override fun onDestroyView() {
-        _browserToolbar?.layout?.viewTreeObserver?.removeOnPreDrawListener(statusBarPreDrawListener)
-        statusBarScrollController?.finishShown()
-        statusBarScrollController = null
+        _browserToolbar?.layout?.viewTreeObserver?.removeOnPreDrawListener(statusBarScrimPreDrawListener)
+        removeStatusBarScrim()
 
         super.onDestroyView()
 
@@ -2404,12 +2399,73 @@ abstract class BaseBrowserFragment :
         val toolbar = _browserToolbar ?: return
         val appliedInset =
             if (requireComponents.settings.toolbarPosition == ToolbarPosition.TOP) statusBarTopInset else 0
+        val headerColor = requireContext().getColorFromAttr(materialR.attr.colorSurface)
+        toolbar.layout.setBackgroundColor(headerColor)
         toolbar.layout.updatePadding(top = appliedInset)
 
-        if (statusBarTopInset > 0 && statusBarScrollController == null) {
-            statusBarScrollController = StatusBarScrollController(requireActivity().window, binding.root)
-            toolbar.layout.viewTreeObserver.addOnPreDrawListener(statusBarPreDrawListener)
+        if (appliedInset > 0) {
+            ensureStatusBarScrim(appliedInset, headerColor)
+        } else {
+            removeStatusBarScrim()
         }
+    }
+
+    private fun ensureStatusBarScrim(height: Int, headerColor: Int) {
+        val toolbar = _browserToolbar ?: return
+        val scrim = statusBarScrim
+        if (scrim != null) {
+            scrim.layoutParams.height = height
+            scrim.background = createStatusBarScrimBackground(headerColor)
+            scrim.requestLayout()
+            return
+        }
+
+        val newScrim =
+            View(requireContext()).apply {
+                alpha = 0f
+                background = createStatusBarScrimBackground(headerColor)
+                layoutParams =
+                    CoordinatorLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        height,
+                    ).apply {
+                        gravity = Gravity.TOP
+                    }
+            }
+
+        val toolbarIndex = binding.browserLayout.indexOfChild(toolbar.layout)
+        binding.browserLayout.addView(newScrim, toolbarIndex.coerceAtLeast(0))
+        statusBarScrim = newScrim
+        toolbar.layout.viewTreeObserver.addOnPreDrawListener(statusBarScrimPreDrawListener)
+    }
+
+    private fun createStatusBarScrimBackground(headerColor: Int) =
+        GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(
+                ColorUtils.setAlphaComponent(headerColor, 0xe6),
+                ColorUtils.setAlphaComponent(headerColor, 0x99),
+                ColorUtils.setAlphaComponent(headerColor, 0),
+            ),
+        )
+
+    private fun updateStatusBarScrimAlpha() {
+        val scrim = statusBarScrim ?: return
+        val toolbar = _browserToolbar ?: return
+        if (statusBarTopInset <= 0) {
+            scrim.alpha = 0f
+            return
+        }
+
+        scrim.alpha = (-toolbar.layout.translationY / statusBarTopInset).coerceIn(0f, 1f)
+    }
+
+    private fun removeStatusBarScrim() {
+        _browserToolbar?.layout?.viewTreeObserver?.removeOnPreDrawListener(statusBarScrimPreDrawListener)
+        statusBarScrim?.let { scrim ->
+            binding.browserLayout.removeView(scrim)
+        }
+        statusBarScrim = null
     }
 
     private fun getConfiguredTopToolbarHeight(includeTabStripIfAvailable: Boolean): Int =

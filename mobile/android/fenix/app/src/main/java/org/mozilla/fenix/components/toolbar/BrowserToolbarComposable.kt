@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -150,7 +151,12 @@ class BrowserToolbarComposable(
                     MaterialTheme(colorScheme = colorScheme) {
                         when (shouldShowTabStrip) {
                             true ->
-                                Column(modifier = Modifier.fillMaxWidth().wrapContentHeight()) {
+                                Column(
+                                    modifier =
+                                        Modifier.fillMaxWidth()
+                                            .wrapContentHeight()
+                                            .background(colorScheme.surface),
+                                ) {
                                     tabStripContent()
                                     BrowserToolbar(
                                         store = toolbarStore,
@@ -164,7 +170,12 @@ class BrowserToolbarComposable(
                                 }
 
                             false ->
-                                Column(modifier = Modifier.fillMaxWidth().wrapContentHeight()) {
+                                Column(
+                                    modifier =
+                                        Modifier.fillMaxWidth()
+                                            .wrapContentHeight()
+                                            .background(colorScheme.surface),
+                                ) {
                                     if (shouldUseBottomToolbar) {
                                         if (customTabSession == null) {
                                             searchSuggestionsContent(Modifier.weight(1f))
