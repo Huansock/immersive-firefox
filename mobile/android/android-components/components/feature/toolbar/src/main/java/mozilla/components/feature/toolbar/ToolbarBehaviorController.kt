@@ -21,13 +21,15 @@ import mozilla.components.lib.state.ext.flowScoped
  * Controls how a dynamic toolbar should behave based on the current tab state.
  *
  * Responsible to enforce the following:
- * - toolbar should not be scrollable if the page has not finished loading
+ * - toolbar should not be scrollable if the page has not finished loading, unless explicitly allowed
  */
 class ToolbarBehaviorController(
     private val toolbar: ScrollableToolbar,
     private val store: BrowserStore,
     private val customTabId: String? = null,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val allowScrollingWhileLoading: Boolean = false,
+    private val shouldExpandToolbar: () -> Boolean = { true },
 ) {
     @VisibleForTesting internal var updatesScope: CoroutineScope? = null
 
@@ -44,14 +46,22 @@ class ToolbarBehaviorController(
                     }
                     .collect { state ->
                         if (state.content.showToolbarAsExpanded) {
-                            expandToolbar()
+                            if (shouldExpandToolbar()) {
+                                expandToolbar()
+                            }
                             store.dispatch(ContentAction.UpdateExpandedToolbarStateAction(state.id, false))
                             return@collect
                         }
 
                         if (state.content.loading) {
-                            expandToolbar()
-                            disableScrolling()
+                            if (shouldExpandToolbar()) {
+                                expandToolbar()
+                            }
+                            if (allowScrollingWhileLoading) {
+                                enableScrolling()
+                            } else {
+                                disableScrolling()
+                            }
                         } else if (!state.content.loading) {
                             enableScrolling()
                         }

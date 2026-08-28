@@ -97,6 +97,33 @@ class ToolbarBehaviorControllerTest {
     }
 
     @Test
+    fun `Controller should enableScrolling if scrolling while loading is allowed`() {
+        val normalTabContent = ContentState("url", loading = true)
+        val store =
+            BrowserStore(
+                BrowserState(
+                    tabs = listOf(TabSessionState("123", normalTabContent)),
+                    selectedTabId = "123",
+                )
+            )
+        val controller =
+            spy(
+                ToolbarBehaviorController(
+                    toolbar = mock(),
+                    store = store,
+                    allowScrollingWhileLoading = true,
+                )
+            )
+
+        controller.start()
+        shadowOf(getMainLooper()).idle()
+
+        verify(controller).expandToolbar()
+        verify(controller).enableScrolling()
+        verify(controller, never()).disableScrolling()
+    }
+
+    @Test
     fun `Controller should enableScrolling if the current tab is not loading`() {
         val normalTabContent = ContentState("url", loading = false)
         val store =

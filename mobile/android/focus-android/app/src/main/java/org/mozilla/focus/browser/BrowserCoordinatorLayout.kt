@@ -9,7 +9,6 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat.Type.displayCutout
 import androidx.core.view.WindowInsetsCompat.Type.systemBars
-import androidx.core.view.updatePadding
 
 /** A [CoordinatorLayout] implementation used in the browser. */
 class BrowserCoordinatorLayout
@@ -20,11 +19,20 @@ constructor(
     defStyleAttr: Int = 0,
 ) : CoordinatorLayout(context, attrs, defStyleAttr) {
     val persistentInsetsTypes = systemBars() or displayCutout()
+    private var persistentTopInset = 0
+    var onTopInsetChanged: ((Int) -> Unit)? = null
+        set(value) {
+            field = value
+            value?.invoke(persistentTopInset)
+        }
 
     init {
         ViewCompat.setOnApplyWindowInsetsListener(this) { _, windowInsets ->
-            val persistentInsets = windowInsets.getInsets(persistentInsetsTypes)
-            updatePadding(top = persistentInsets.top)
+            val persistentInsets = windowInsets.getInsetsIgnoringVisibility(persistentInsetsTypes)
+            if (persistentTopInset != persistentInsets.top) {
+                persistentTopInset = persistentInsets.top
+                onTopInsetChanged?.invoke(persistentTopInset)
+            }
             return@setOnApplyWindowInsetsListener windowInsets
         }
     }

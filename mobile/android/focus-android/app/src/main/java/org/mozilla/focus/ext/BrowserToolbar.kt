@@ -7,14 +7,35 @@ package org.mozilla.focus.ext
 import android.content.Context
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.isVisible
+import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.ui.widgets.behavior.DependencyGravity.Top
 import mozilla.components.ui.widgets.behavior.EngineViewClippingBehavior
 import mozilla.components.ui.widgets.behavior.EngineViewScrollingGesturesBehavior
 import org.mozilla.focus.R
+import java.util.WeakHashMap
 
 private const val BOTTOM_TOOLBAR_HEIGHT = 0
+private val configuredToolbarHeights = WeakHashMap<BrowserToolbar, Int>()
+
+private fun BrowserToolbar.configuredHeight(context: Context): Int =
+    configuredToolbarHeights[this] ?: context.resources.getDimension(R.dimen.browser_toolbar_height).toInt()
+
+fun BrowserToolbar.updateTopInset(context: Context, engineView: EngineView, topInset: Int) {
+    val toolbarHeight = context.resources.getDimension(R.dimen.browser_toolbar_height).toInt() + topInset
+    configuredToolbarHeights[this] = toolbarHeight
+    updateLayoutParams { height = toolbarHeight }
+    updatePadding(top = topInset)
+
+    val behavior = (layoutParams as? CoordinatorLayout.LayoutParams)?.behavior
+    if (behavior is EngineViewScrollingGesturesBehavior) {
+        enableDynamicBehavior(context, engineView)
+    } else if (isVisible) {
+        showAsFixed(context, engineView)
+    }
+}
 
 /**
  * Collapse the toolbar and block it from appearing until calling [enableDynamicBehavior]. Useful in situations like
@@ -46,7 +67,7 @@ fun BrowserToolbar.enableDynamicBehavior(context: Context, engineView: EngineVie
             dependencyGravity = Top,
         )
 
-    val toolbarHeight = context.resources.getDimension(R.dimen.browser_toolbar_height).toInt()
+    val toolbarHeight = configuredHeight(context)
     engineView.setDynamicToolbarMaxHeight(toolbarHeight)
     (engineView.asView().layoutParams as? CoordinatorLayout.LayoutParams)?.apply {
         topMargin = 0
@@ -72,7 +93,7 @@ fun BrowserToolbar.showAsFixed(context: Context, engineView: EngineView) {
 
     engineView.setDynamicToolbarMaxHeight(0)
 
-    val toolbarHeight = context.resources.getDimension(R.dimen.browser_toolbar_height).toInt()
+    val toolbarHeight = configuredHeight(context)
     (engineView.asView().layoutParams as? CoordinatorLayout.LayoutParams)?.topMargin = toolbarHeight
 }
 

@@ -111,6 +111,8 @@ class BrowserToolbarComposable(
                             toolbar = this@BrowserToolbarComposable,
                             store = browserStore,
                             customTabId = customTabSession?.id,
+                            allowScrollingWhileLoading = true,
+                            shouldExpandToolbar = ::shouldExpandToolbar,
                         )
                     toolbarController.start()
                     onDispose { toolbarController.stop() }
@@ -318,6 +320,8 @@ class BrowserToolbarComposable(
     }
 
     private fun shouldShowTabStrip() = customTabSession == null && settings.isTabStripEnabled
+
+    private fun shouldExpandToolbar() = settings.toolbarPosition != TOP
 
     private fun setupShowingToolbarsAfterKeyboardHidden() {
         container.addView(

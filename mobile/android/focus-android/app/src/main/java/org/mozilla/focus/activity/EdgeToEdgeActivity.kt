@@ -4,16 +4,17 @@
 
 package org.mozilla.focus.activity
 
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat.Type.displayCutout
 import androidx.core.view.WindowInsetsCompat.Type.systemBars
 import mozilla.components.support.locale.LocaleAwareAppCompatActivity
-import org.mozilla.focus.fragment.BrowserFragment
 
 /** Base [LocaleAwareAppCompatActivity] that handles adapting the UI to edge to edge display. */
 open class EdgeToEdgeActivity : LocaleAwareAppCompatActivity() {
@@ -26,12 +27,19 @@ open class EdgeToEdgeActivity : LocaleAwareAppCompatActivity() {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            enableEdgeToEdge()
+            enableEdgeToEdge(
+                navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+            )
             setupPersistentInsets()
         } else {
             @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility =
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            window.apply {
+                navigationBarColor = Color.TRANSPARENT
+                decorView.systemUiVisibility =
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            }
         }
     }
 
@@ -46,18 +54,12 @@ open class EdgeToEdgeActivity : LocaleAwareAppCompatActivity() {
                 view.setPadding(0, 0, 0, 0)
             } else {
                 val persistentInsets = windowInsets.getInsets(persistentInsetsTypes)
-                val currentFragment = supportFragmentManager.fragments.firstOrNull { it.isVisible }
-                val bottomPadding =
-                    when (currentFragment) {
-                        is BrowserFragment -> persistentInsets.bottom
-                        else -> 0 // no need for bottom padding on other screens.
-                    }
 
                 view.setPadding(
                     persistentInsets.left,
                     0, // we want to draw behind status bar
                     persistentInsets.right,
-                    bottomPadding,
+                    0, // we want to draw behind navigation bar
                 )
             }
             windowInsets

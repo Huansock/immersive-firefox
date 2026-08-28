@@ -18,6 +18,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.CallSuper
@@ -37,6 +38,7 @@ import androidx.core.content.getSystemService
 import androidx.core.text.HtmlCompat
 import androidx.core.view.OnApplyWindowInsetsListener
 import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
@@ -197,6 +199,7 @@ import org.mozilla.fenix.components.toolbar.BottomToolbarContainerIntegration
 import org.mozilla.fenix.components.toolbar.BottomToolbarContainerView
 import org.mozilla.fenix.components.toolbar.BrowserNavigationBar
 import org.mozilla.fenix.components.toolbar.BrowserToolbarComposable
+import org.mozilla.fenix.components.toolbar.StatusBarScrollController
 import org.mozilla.fenix.components.toolbar.ToolbarContainerView
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.components.toolbar.ToolbarsIntegration
@@ -270,6 +273,19 @@ abstract class BaseBrowserFragment :
 
     @VisibleForTesting @Suppress("VariableNaming") internal var _browserToolbar: BrowserToolbarComposable? = null
     private var awesomeBarComposable: AwesomeBarComposable? = null
+    private var statusBarTopInset = 0
+    private var statusBarScrollController: StatusBarScrollController? = null
+    private val statusBarPreDrawListener =
+        ViewTreeObserver.OnPreDrawListener {
+            statusBarScrollController?.synchronize(
+                toolbar = browserToolbar.layout,
+                topInset = statusBarTopInset,
+                shouldSynchronize =
+                    requireComponents.settings.toolbarPosition == ToolbarPosition.TOP &&
+                        fullScreenFeature.get()?.isFullScreen != true,
+            )
+            true
+        }
 
     @VisibleForTesting
     internal val browserToolbar: BrowserToolbarComposable
@@ -537,6 +553,7 @@ abstract class BaseBrowserFragment :
         }
 
         _browserToolbar = initializeBrowserToolbar(activity, store, readerMenuController)
+        applyStatusBarTopInset()
 
         if (context.components.settings.microsurveyFeatureEnabled) {
             listenForMicrosurveyMessage(context)
@@ -552,7 +569,7 @@ abstract class BaseBrowserFragment :
                     engineView = getEngineView(),
                     toolbar = browserToolbar,
                     topToolbarHeight = {
-                        getTopToolbarHeight(includeTabStripIfAvailable = customTabSessionId == null)
+                        getConfiguredTopToolbarHeight(includeTabStripIfAvailable = customTabSessionId == null)
                     },
                     onToolbarsReset = ::collapseBrowserView,
                 ),
@@ -1414,7 +1431,7 @@ abstract class BaseBrowserFragment :
         )
 
         initializeEngineView(
-            topToolbarHeight = getTopToolbarHeight(includeTabStripIfAvailable = customTabSessionId == null),
+            topToolbarHeight = getConfiguredTopToolbarHeight(includeTabStripIfAvailable = customTabSessionId == null),
             bottomToolbarHeight = bottomToolbarHeight,
         )
 
@@ -2167,7 +2184,7 @@ abstract class BaseBrowserFragment :
         // Avoid any change for scenarios where the toolbar is not shown
         if (fullScreenFeature.get()?.isFullScreen == true) return 0 to 0
 
-        val topToolbarHeight = getTopToolbarHeight(includeTabStripIfAvailable = customTabSessionId == null)
+        val topToolbarHeight = getConfiguredTopToolbarHeight(includeTabStripIfAvailable = customTabSessionId == null)
         val bottomToolbarHeight = getBottomToolbarHeight(includeNavBarIfEnabled = customTabSessionId == null)
 
         return topToolbarHeight to bottomToolbarHeight
@@ -2310,6 +2327,7 @@ abstract class BaseBrowserFragment :
 
     @CallSuper
     internal open fun onUpdateToolbarForConfigurationChange(toolbar: BrowserToolbarComposable) {
+        applyStatusBarTopInset()
         reinitializeEngineView()
 
         // If the microsurvey feature is visible, we should update it's state.
@@ -2328,7 +2346,7 @@ abstract class BaseBrowserFragment :
     internal fun reinitializeEngineView() {
         val isFullscreen = fullScreenFeature.get()?.isFullScreen == true
         val shouldToolbarsBeHidden = isFullscreen || !webAppToolbarShouldBeVisible
-        val topToolbarHeight = getTopToolbarHeight(includeTabStripIfAvailable = customTabSessionId == null)
+        val topToolbarHeight = getConfiguredTopToolbarHeight(includeTabStripIfAvailable = customTabSessionId == null)
         val bottomToolbarHeight = getBottomToolbarHeight(includeNavBarIfEnabled = customTabSessionId == null)
 
         initializeEngineView(
@@ -2341,6 +2359,10 @@ abstract class BaseBrowserFragment :
      * Dereference these views when the fragment view is destroyed to prevent memory leaks
      */
     override fun onDestroyView() {
+        _browserToolbar?.layout?.viewTreeObserver?.removeOnPreDrawListener(statusBarPreDrawListener)
+        statusBarScrollController?.finishShown()
+        statusBarScrollController = null
+
         super.onDestroyView()
 
         // Diagnostic breadcrumb for "Display already aquired" crash:
@@ -2365,6 +2387,34 @@ abstract class BaseBrowserFragment :
         blackScreenOverlay = null
         _binding = null
     }
+
+    internal fun updateStatusBarTopInset(topInset: Int) {
+        if (statusBarTopInset == topInset) {
+            return
+        }
+
+        statusBarTopInset = topInset
+        if (_browserToolbar != null) {
+            applyStatusBarTopInset()
+            reinitializeEngineView()
+        }
+    }
+
+    private fun applyStatusBarTopInset() {
+        val toolbar = _browserToolbar ?: return
+        val appliedInset =
+            if (requireComponents.settings.toolbarPosition == ToolbarPosition.TOP) statusBarTopInset else 0
+        toolbar.layout.updatePadding(top = appliedInset)
+
+        if (statusBarTopInset > 0 && statusBarScrollController == null) {
+            statusBarScrollController = StatusBarScrollController(requireActivity().window, binding.root)
+            toolbar.layout.viewTreeObserver.addOnPreDrawListener(statusBarPreDrawListener)
+        }
+    }
+
+    private fun getConfiguredTopToolbarHeight(includeTabStripIfAvailable: Boolean): Int =
+        getTopToolbarHeight(includeTabStripIfAvailable) +
+            if (requireComponents.settings.toolbarPosition == ToolbarPosition.TOP) statusBarTopInset else 0
 
     override fun onAttach(context: Context) {
         super.onAttach(context)

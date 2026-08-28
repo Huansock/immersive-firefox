@@ -144,7 +144,14 @@ class BrowserToolbarIntegration(
             showMaskInPrivateMode = false,
         )
 
-    @VisibleForTesting internal var toolbarController = ToolbarBehaviorController(toolbar, store, customTabId)
+    @VisibleForTesting
+    internal var toolbarController =
+        ToolbarBehaviorController(
+            toolbar,
+            store,
+            customTabId,
+            allowScrollingWhileLoading = true,
+        )
 
     init {
         val context = toolbar.context

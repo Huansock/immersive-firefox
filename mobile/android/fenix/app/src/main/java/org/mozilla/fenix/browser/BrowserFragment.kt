@@ -63,6 +63,7 @@ import org.mozilla.fenix.components.toolbar.gestures.ToolbarVerticalGesturesHand
 import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
+import org.mozilla.fenix.e2e.StatusBarEdgeToEdgeFragment
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getRectWithScreenLocation
@@ -86,7 +87,15 @@ import org.mozilla.fenix.utils.Settings
 
 /** Fragment used for browsing the web within the main app. */
 @Suppress("TooManyFunctions", "LargeClass")
-class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemInsetsPaddedFragment {
+class BrowserFragment :
+    BaseBrowserFragment(),
+    UserInteractionHandler,
+    SystemInsetsPaddedFragment,
+    StatusBarEdgeToEdgeFragment {
+
+    override fun onTopInsetChanged(topInset: Int) {
+        updateStatusBarTopInset(topInset)
+    }
     private val windowFeature = ViewBoundFeatureWrapper<WindowFeature>()
     private val openInAppOnboardingObserver = ViewBoundFeatureWrapper<OpenInAppOnboardingObserver>()
     private val translationsBinding = ViewBoundFeatureWrapper<TranslationsBinding>()
