@@ -4,18 +4,19 @@
 
 //! Specified values for font properties
 
+use crate::Atom;
 use crate::context::QuirksMode;
 use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::typed_om::NumericBaseType;
-use crate::values::computed::font::{FamilyName, FontFamilyList, SingleFontFamily};
 use crate::values::computed::Percentage as ComputedPercentage;
-use crate::values::computed::{font as computed, Length, NonNegativeLength};
+use crate::values::computed::font::{FamilyName, FontFamilyList, SingleFontFamily};
 use crate::values::computed::{CSSPixelLength, Context, ToComputedValue};
+use crate::values::computed::{Length, NonNegativeLength, font as computed};
+use crate::values::generics::NonNegative;
 use crate::values::generics::font::{
     self as generics, FeatureTagValue, FontSettings, FontTag, GenericLineHeight, VariationValue,
 };
-use crate::values::generics::NonNegative;
 use crate::values::specified::calc::{Leaf, PercentageContext};
 use crate::values::specified::length::{FontBaseSize, LengthUnit, LineHeightBase, PX_PER_PT};
 use crate::values::specified::number::parse_number_with_clamping_mode;
@@ -23,9 +24,8 @@ use crate::values::specified::{AllowQuirks, Angle, Integer, LengthPercentage};
 use crate::values::specified::{
     NoCalcLength, NonNegativeLengthPercentage, NonNegativeNumber, NonNegativePercentage, Number,
 };
-use crate::values::{serialize_atom_identifier, CustomIdent, SelectorParseErrorKind};
-use crate::Atom;
-use cssparser::{match_ignore_ascii_case, Parser, Token};
+use crate::values::{CustomIdent, SelectorParseErrorKind, serialize_atom_identifier};
+use cssparser::{Parser, Token, match_ignore_ascii_case};
 #[cfg(feature = "gecko")]
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps, MallocUnconditionalSizeOf};
 use std::fmt::{self, Write};
@@ -166,7 +166,7 @@ impl FontWeight {
 
     /// Get a specified FontWeight from a gecko keyword
     pub fn from_gecko_keyword(kw: u32) -> Self {
-        debug_assert!(kw % 100 == 0);
+        debug_assert!(kw.is_multiple_of(100));
         debug_assert!(kw as f32 <= MAX_FONT_WEIGHT);
         FontWeight::Absolute(AbsoluteFontWeight::Weight(Number::new(kw as f32)))
     }
@@ -252,7 +252,8 @@ impl Parse for AbsoluteFontWeight {
             // We could add another AllowedNumericType value, but it doesn't
             // seem worth it just for a single property with such a weird range,
             // so we do the clamping here manually.
-            if matches!(number.get(), Some(v) if v < MIN_FONT_WEIGHT || v > MAX_FONT_WEIGHT) {
+            if matches!(number.get(), Some(v) if !(MIN_FONT_WEIGHT..=MAX_FONT_WEIGHT).contains(&v))
+            {
                 return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
             }
             return Ok(AbsoluteFontWeight::Weight(number));
@@ -351,12 +352,12 @@ impl SpecifiedFontStyle {
         }
 
         let degrees = angle.degrees().unwrap();
-        if degrees < FONT_STYLE_OBLIQUE_MIN_ANGLE_DEGREES
-            || degrees > FONT_STYLE_OBLIQUE_MAX_ANGLE_DEGREES
+        if !(FONT_STYLE_OBLIQUE_MIN_ANGLE_DEGREES..=FONT_STYLE_OBLIQUE_MAX_ANGLE_DEGREES)
+            .contains(&degrees)
         {
             return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
         }
-        return Ok(angle);
+        Ok(angle)
     }
 
     /// The default angle for `font-style: oblique`.
@@ -483,6 +484,7 @@ impl ToComputedValue for FontWidth {
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Default,
     MallocSizeOf,
     Parse,
     PartialEq,
@@ -504,6 +506,7 @@ pub enum FontSizeKeyword {
     XXSmall,
     XSmall,
     Small,
+    #[default]
     Medium,
     Large,
     XLarge,
@@ -536,12 +539,6 @@ impl FontSizeKeyword {
     #[cfg(feature = "servo")]
     pub fn is_math(self) -> bool {
         false
-    }
-}
-
-impl Default for FontSizeKeyword {
-    fn default() -> Self {
-        FontSizeKeyword::Medium
     }
 }
 
@@ -875,7 +872,7 @@ impl FontSizeKeyword {
         static FONT_SIZE_FACTORS: [i32; 8] = [60, 75, 89, 100, 120, 150, 200, 300];
         let base_size_px = base_size.px().round() as i32;
         let html_size = self.html_size() as usize;
-        NonNegative(if base_size_px >= 9 && base_size_px <= 16 {
+        NonNegative(if (9..=16).contains(&base_size_px) {
             let mapping = if quirks_mode == QuirksMode::Quirks {
                 QUIRKS_FONT_SIZE_MAPPING
             } else {
@@ -1111,8 +1108,11 @@ bitflags! {
 #[derive(
     Clone,
     Debug,
+    Deserialize,
+    Hash,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToCss,
     ToComputedValue,
@@ -1148,8 +1148,11 @@ pub enum VariantAlternates {
     Clone,
     Debug,
     Default,
+    Deserialize,
+    Hash,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
@@ -1165,6 +1168,16 @@ pub struct FontVariantAlternates(
 );
 
 impl FontVariantAlternates {
+    /// Returns true if the list is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Iterates over all alternates in the list.
+    pub fn iter(&self) -> impl Iterator<Item = &VariantAlternates> {
+        self.0.iter()
+    }
+
     /// Returns the length of all variant alternates.
     pub fn len(&self) -> usize {
         self.0.iter().fold(0, |acc, alternate| match *alternate {
@@ -1214,7 +1227,7 @@ impl Parse for FontVariantAlternates {
                 parsed_alternates |= $flag;
             )
         );
-        while let Ok(_) = input.try_parse(|input| match *input.next()? {
+        while input.try_parse(|input| match *input.next()? {
             Token::Ident(ref value) if value.eq_ignore_ascii_case("historical-forms") => {
                 check_if_parsed!(input, VariantAlternatesParsingFlags::HISTORICAL_FORMS);
                 historical = Some(VariantAlternates::HistoricalForms);
@@ -1264,12 +1277,12 @@ impl Parse for FontVariantAlternates {
                             character_variant = Some(VariantAlternates::CharacterVariant(idents.into()));
                             Ok(())
                         },
-                        _ => return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError)),
+                        _ => Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError)),
                     }
                 })
             },
             _ => Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError)),
-        }) {}
+        }).is_ok() {}
 
         if parsed_alternates.is_empty() {
             return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError));
@@ -1834,8 +1847,7 @@ impl Parse for XLang {
     }
 }
 
-#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
-#[derive(Clone, Copy, Debug, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
 /// Specifies the minimum font size allowed due to changes in scriptlevel.
 /// Ref: https://wiki.mozilla.org/MathML:mstyle
 pub struct MozScriptMinSize(pub NoCalcLength);
@@ -1860,8 +1872,7 @@ impl Parse for MozScriptMinSize {
 
 /// A value for the `math-depth` property.
 /// https://mathml-refresh.github.io/mathml-core/#the-math-script-level-property
-#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
-#[derive(Clone, Debug, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
 pub enum MathDepth {
     /// Increment math-depth if math-style is compact.
     AutoAdd,
@@ -1892,11 +1903,11 @@ impl Parse for MathDepth {
     }
 }
 
-#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[derive(
     Clone,
     Copy,
     Debug,
+    MallocSizeOf,
     PartialEq,
     SpecifiedValueInfo,
     ToComputedValue,
@@ -1949,9 +1960,9 @@ pub type LineHeight = GenericLineHeight<NonNegativeNumber, NonNegativeLengthPerc
 /// Parses a line height <number> value. Percentages in <number>-typed calc expressions
 /// are allowed in the `line-height` property, relative to the computed value of 1em.
 /// https://drafts.csswg.org/css-inline/#line-height-property
-fn parse_line_height_number<'i, 't>(
+fn parse_line_height_number(
     context: &ParserContext,
-    input: &mut Parser<'i, 't>,
+    input: &mut Parser,
 ) -> Result<NonNegativeNumber, ParseError> {
     parse_number_with_clamping_mode(
         context,
@@ -1963,10 +1974,7 @@ fn parse_line_height_number<'i, 't>(
 }
 
 impl Parse for LineHeight {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError> {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
         if let Ok(v) = input.try_parse(|input| parse_line_height_number(context, input)) {
             return Ok(GenericLineHeight::Number(v));
         }
@@ -2016,7 +2024,7 @@ impl ToComputedValue for LineHeight {
     fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
         match self {
             GenericLineHeight::Normal => GenericLineHeight::Normal,
-            GenericLineHeight::Number(ref number) => {
+            GenericLineHeight::Number(number) => {
                 let value = match number.as_calc() {
                     None => number.to_computed_value(context).0,
                     Some(calc) => {
@@ -2040,7 +2048,7 @@ impl ToComputedValue for LineHeight {
                 };
                 GenericLineHeight::Number(NonNegative(value))
             },
-            GenericLineHeight::Length(ref non_negative_lp) => {
+            GenericLineHeight::Length(non_negative_lp) => {
                 let result = match non_negative_lp.0 {
                     LengthPercentage::Length(ref length) => {
                         resolve_line_height_length(context, *length)

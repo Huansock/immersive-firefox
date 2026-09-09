@@ -361,13 +361,21 @@ def _drop_redundant_chunks(full_task_graph, labels):
     return kept
 
 
-def _renumbered_chunks(full_task_graph, labels):
-    """Map explicitly requested chunk labels that no longer exist onto the
-    chunks their task ends up with.
+def _renumbered_chunks(full_task_graph, labels, restricted):
+    """Map explicitly requested test labels that no longer exist onto the chunks
+    their task ends up with.
 
-    Chunk counts are computed from what try asked for, so a caller that picked
-    labels from an unrestricted graph, like `mach try coverage` or a
-    `mach try again` of an older push, can name a chunk that doesn't exist.
+    A task's chunk count is only known once the decision task has resolved it
+    from the manifest runtime data and from what try asked for, so a caller that
+    picked labels from a graph built with different counts can name a chunk that
+    doesn't exist. `mach try fuzzy` generates its task list with `taskgraph.fast`
+    set, which skips manifest loading and falls back to the hardcoded chunk
+    counts; `mach try coverage` builds an unrestricted graph; `mach try again`
+    replays the labels of an older push.
+
+    Such a label either names a chunk of a task that now has a different number
+    of them, or, when the graph it came from had the task down to a single
+    chunk, names the task without any chunk suffix at all.
     """
     recovered = []
     for label in labels:
@@ -375,10 +383,11 @@ def _renumbered_chunks(full_task_graph, labels):
             recovered.append(label)
             continue
 
+        # A numeric suffix means the label names a chunk of the task before it,
+        # anything else means the label is the whole (unchunked) task name.
         base = label.rsplit("-", 1)[0]
         if _chunk_number(label, base) is None:
-            recovered.append(label)
-            continue
+            base = label
 
         chunks = [
             t for t in full_task_graph.graph.nodes if _chunk_number(t, base) is not None
@@ -393,7 +402,10 @@ def _renumbered_chunks(full_task_graph, labels):
 
         # The chunks of a task that wasn't restricted to the request all run the
         # same tests, so substituting them all would schedule identical jobs.
-        chunks = _drop_redundant_chunks(full_task_graph, chunks)
+        # Without a restriction each chunk runs its own share of the suite and
+        # they are all wanted.
+        if restricted:
+            chunks = _drop_redundant_chunks(full_task_graph, chunks)
 
         logger.info(
             f"{label} no longer exists, replacing it with the chunks the task "
@@ -426,9 +438,10 @@ def _try_task_config(full_task_graph, parameters, graph_config):
         else:
             missing.add(pattern)
 
-    if _restricts_tests(parameters):
+    restricted = _restricts_tests(parameters)
+    if restricted:
         matched_tasks = _drop_redundant_chunks(full_task_graph, matched_tasks)
-        tasks = _renumbered_chunks(full_task_graph, tasks)
+    tasks = _renumbered_chunks(full_task_graph, tasks, restricted)
 
     selected_tasks = set(tasks) | set(matched_tasks)
     missing.update(selected_tasks - set(full_task_graph.tasks))
@@ -506,6 +519,7 @@ def target_tasks_mozilla_central(full_task_graph, parameters, graph_config):
         build_platform = task.attributes.get("build_platform")
         build_type = task.attributes.get("build_type")
         shippable = task.attributes.get("shippable", False)
+        ccov = task.attributes.get("ccov", False)
 
         if not build_platform or not build_type:
             return True
@@ -515,11 +529,11 @@ def target_tasks_mozilla_central(full_task_graph, parameters, graph_config):
         # (which is to say, not shippable, asan, tsan, or any other opt build
         # with other properties). There's no positive test for this, so we have to
         # do it somewhat hackily. Android doesn't have variants other than shippable
-        # so it is pretty straightforward to check for. Other platforms have many
-        # variants, but none of the regular opt builds we're looking for have a "-"
-        # in their platform name, so this works (for now).
+        # and ccov so it is pretty straightforward to check for. Other platforms
+        # have many variants, but none of the regular opt builds we're looking for
+        # have a "-" in their platform name, so this works (for now).
         is_regular_opt = (
-            family == "android" and not shippable
+            family == "android" and not shippable and not ccov
         ) or "-" not in build_platform
 
         if build_type != "opt" or not is_regular_opt:
@@ -1785,6 +1799,19 @@ def target_tasks_perftest_autoland(full_task_graph, parameters, graph_config):
             test_name in name for test_name in ["view"]
         ):
             yield name
+
+
+APPLINK_PROFILING_LABELS = {
+    "perftest-android-hw-a55-aarch64-shippable-startup-fenix-newssite-applink-startup",
+}
+
+
+@register_target_task("perftest-applink-profiling")
+def target_tasks_perftest_applink_profiling(full_task_graph, parameters, graph_config):
+    """
+    Select the applink startup tasks and run them with profiling
+    """
+    return [name for name in full_task_graph.tasks if name in APPLINK_PROFILING_LABELS]
 
 
 @register_target_task("retrigger-perftests-autoland")

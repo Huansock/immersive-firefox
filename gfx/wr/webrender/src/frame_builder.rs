@@ -17,7 +17,7 @@ use crate::gpu_types::{PrimitiveHeaders, ZBufferIdGenerator};
 use crate::gpu_types::QuadSegment;
 use crate::internal_types::{FastHashMap, PlaneSplitter, FrameStamp};
 use crate::invalidation::DirtyRegion;
-use crate::tile_cache::{SliceId, TileCacheInstance};
+use crate::tile_cache::{max_surface_size_for_screen, SliceId, TileCacheInstance};
 use crate::picture::PictureInstance;
 use crate::picture::ResolvedSurfaceTexture;
 use crate::picture::{RasterConfig, PictureScratch};
@@ -114,6 +114,23 @@ pub struct FrameBuildingContext<'a> {
     pub debug_flags: DebugFlags,
     pub fb_config: &'a FrameBuilderConfig,
     pub root_spatial_node_index: SpatialNodeIndex,
+}
+
+impl<'a> FrameBuildingContext<'a> {
+    /// The maximum size per axis, in device pixels, of a surface allocated
+    /// during this frame. Surfaces larger than this are scaled down to fit.
+    pub fn max_surface_size(&self) -> usize {
+        // Tests pin the limit so they can exercise the scale-down path at a
+        // size that fits in a reftest window.
+        if let Some(size) = self.fb_config.max_surface_override {
+            return size;
+        }
+
+        max_surface_size_for_screen(
+            self.global_screen_device_rect.size().round().to_i32(),
+            self.fb_config.max_target_size,
+        )
+    }
 }
 
 pub struct FrameBuildingState<'a> {
@@ -218,7 +235,6 @@ pub struct PictureContext {
     pub pic_index: PictureIndex,
     pub surface_spatial_node_index: SpatialNodeIndex,
     pub raster_spatial_node_index: SpatialNodeIndex,
-    pub visibility_spatial_node_index: SpatialNodeIndex,
     /// The surface that this picture will render on.
     pub surface_index: SurfaceIndex,
     pub dirty_region_count: usize,
@@ -229,7 +245,9 @@ pub struct PictureContext {
 /// the children are processed.
 pub struct PictureState {
     pub map_local_to_pic: SpaceMapper<LayoutPixel, PicturePixel>,
-    pub map_pic_to_vis: SpaceMapper<PicturePixel, VisPixel>,
+    /// Maps this picture's space to the screen framebuffer, for the debug
+    /// overlays that draw into it.
+    pub map_pic_to_device: SpaceMapper<PicturePixel, DevicePixel>,
 }
 
 impl FrameBuilder {
@@ -315,6 +333,7 @@ impl FrameBuilder {
             euclid::Scale::new(1.0),
             (1.0, 1.0),
             (1.0, 1.0),
+            (1.0, 1.0),
             false,
             false,
         ));
@@ -396,11 +415,9 @@ impl FrameBuilder {
                     visibility_state.clip_tree.push_clip_root_node(node);
                 }
 
-                let culling_rect = DeviceRect::max_rect();
                 update_prim_visibility(
                     *pic_index,
                     None,
-                    &culling_rect,
                     &scene.prim_store,
                     true,
                     &visibility_context,
@@ -443,7 +460,7 @@ impl FrameBuilder {
                         // If we have a tile cache for this picture, see if any of the
                         // relative transforms have changed, which means we need to
                         // re-map the dependencies of any child primitives.
-                        let culling_rect = tile_cache.pre_update(
+                        tile_cache.pre_update(
                             surface_index,
                             &visibility_context,
                             &mut visibility_state,
@@ -460,7 +477,6 @@ impl FrameBuilder {
                         update_prim_visibility(
                             *pic_index,
                             None,
-                            &culling_rect,
                             &scene.prim_store,
                             true,
                             &visibility_context,
@@ -798,6 +814,15 @@ impl FrameBuilder {
         self.composite_state_prealloc.record(&composite_state);
 
         composite_state.end_frame();
+
+        {
+            let vis_stats = scene.clip_store.vis_stats();
+            profile.set(profiler::VIS_CLIP_PROJECTIONS, vis_stats.projections);
+            profile.set(profiler::VIS_CLIP_PROJECTION_FAILS, vis_stats.projection_fails);
+            profile.set(profiler::VIS_CLIP_REJECTS, vis_stats.rejects);
+            profile.set(profiler::VIS_CLIP_INDETERMINATE, vis_stats.indeterminate);
+        }
+
         scene.clip_store.end_frame(&mut scratch.clip_store);
         scratch.end_frame();
 
@@ -1203,6 +1228,7 @@ pub fn build_render_pass(
                                 transforms,
                                 pic_task.raster_spatial_node_index,
                                 pic_task.surface_spatial_node_index,
+                                pic_task.device_pixel_scale,
                                 z_generator,
                                 prim_instances,
                                 gpu_buffer_builder,

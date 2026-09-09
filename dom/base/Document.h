@@ -1033,6 +1033,17 @@ class Document : public nsINode,
   void SetBidiEnabled() { mBidiEnabled = true; }
 
   /**
+   * If false, every element in this document is definitely LTR.
+   * If true, there might be <bdi> elements or dir!=LTR attributes.
+   */
+  bool NeedsDirHandling() const { return mNeedsDirHandling; }
+
+  /**
+   * Irreversibly indicate that elements might have RTL directionality.
+   */
+  void SetNeedsDirHandling() { mNeedsDirHandling = true; }
+
+  /**
    * Whether a document is the initial document in its window, and if so,
    * which stage of initialness it is in.
    */
@@ -1340,6 +1351,21 @@ class Document : public nsINode,
       const nsAString& aThirdPartyOrigin, const bool aRequireUserInteraction,
       ErrorResult& aRv);
 
+ private:
+  // Consumes transient user gesture activation and rejects aPromise with a
+  // NotAllowedError, as done whenever requestStorageAccess (or
+  // requestStorageAccessForOrigin) is denied.
+  void ConsumeUserGestureAndRejectRequestStorageAccessPromise(
+      Promise* aPromise);
+
+  // If aMaybeResult has a value, resolves or rejects aPromise accordingly and
+  // returns true so the caller can return early. Returns false if
+  // aMaybeResult is empty, meaning the caller should continue on to its next
+  // check.
+  bool MaybeResolveOrRejectRequestStorageAccessPromise(
+      const Maybe<bool>& aMaybeResult, Promise* aPromise);
+
+ public:
   bool UseRegularPrincipal() const;
 
   /**
@@ -5078,6 +5104,9 @@ class Document : public nsINode,
 
   // True if BIDI is enabled.
   bool mBidiEnabled : 1;
+
+  // True if we cannot assume all elements to be LTR and need to compute.
+  bool mNeedsDirHandling : 1;
 
   // True if we are trying to fire the load event for the initial about:blank.
   // Since the initial about:blank is already in READYSTATE_COMPLETE when

@@ -13,6 +13,9 @@ add_task(async function test_aboutwelcome_theme_picker_screen_displays() {
   // AW_THEME_PICKER is targeted on browser.nova.enabled.
   await pushPrefs(["browser.nova.enabled", true]);
   await setAboutWelcomeMultiStage(JSON.stringify([getThemePickerScreen()]));
+
+  Services.fog.testResetFOG();
+
   let { cleanup, browser } = await openMRAboutWelcome();
 
   await test_screen_content(
@@ -37,6 +40,24 @@ add_task(async function test_aboutwelcome_theme_picker_screen_displays() {
       "theme-picker should render at least one theme button"
     );
   });
+
+  await Services.fog.testFlushAllChildren();
+  const events = Glean.themePicker.shown.testGetValue();
+  Assert.equal(
+    events?.length,
+    1,
+    "Displaying the screen should record shown once"
+  );
+  Assert.equal(
+    events?.[0].extra.source,
+    "about:welcome",
+    "The about:welcome source should be recorded"
+  );
+  Assert.equal(
+    events?.[0].extra.layout,
+    "full",
+    "The full picker layout should be recorded"
+  );
 
   await cleanup();
   await popPrefs();

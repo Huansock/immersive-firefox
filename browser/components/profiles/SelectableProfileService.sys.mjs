@@ -529,6 +529,15 @@ class SelectableProfileServiceClass extends EventEmitter {
   }
 
   /**
+   * The public API to initialize the service.
+   *
+   * @returns {Promise}
+   */
+  init() {
+    return this.#init();
+  }
+
+  /**
    * At startup, store the nsToolkitProfile for the group.
    * Get the groupDBPath from the nsToolkitProfile, and connect to it.
    *
@@ -536,9 +545,9 @@ class SelectableProfileServiceClass extends EventEmitter {
    *
    * @returns {Promise}
    */
-  init(isInitial = false) {
+  #init(isInitial = false) {
     if (!this.#initPromise) {
-      this.#initPromise = this.#init(isInitial).finally(
+      this.#initPromise = this.#initialize(isInitial).finally(
         () => (this.#initPromise = null)
       );
     }
@@ -546,7 +555,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     return this.#initPromise;
   }
 
-  async #init(isInitial = false) {
+  async #initialize(isInitial = false) {
     if (this.#initialized) {
       return;
     }
@@ -559,6 +568,8 @@ class SelectableProfileServiceClass extends EventEmitter {
     if (!this.isEnabled) {
       return;
     }
+
+    Glean.profiles.active.set(lazy.PROFILES_CREATED);
 
     if (!lazy.PROFILES_CREATED) {
       return;
@@ -601,16 +612,22 @@ class SelectableProfileServiceClass extends EventEmitter {
       };
     }
 
+    this.#cachedProfileCount = await this.getProfileCount();
+
     // If this isn't the first init prior to creating the first new profile and
     // the app is started up we should have found a current profile.
     if (!isInitial && !Services.startup.startingUp && !this.#currentProfile) {
-      let count = await this.getProfileCount();
+      Glean.profiles.currentMissing.record({
+        profile_count: this.#cachedProfileCount,
+      });
 
-      if (count) {
+      if (this.#cachedProfileCount) {
         // There are other profiles, re-create the current profile.
         this.#currentProfile = await this.#createProfile(
           ProfilesDatastoreService.constructor.getDirectory("ProfD")
         );
+
+        this.#cachedProfileCount++;
       } else {
         // No other profiles. Reset our state.
         this.groupToolkitProfile.storeID = null;
@@ -620,9 +637,13 @@ class SelectableProfileServiceClass extends EventEmitter {
         this.#connection = null;
         this.updateEnabledState();
 
+        Glean.profiles.active.set(false);
+
         return;
       }
     }
+
+    Glean.profiles.profileCount.set(this.#cachedProfileCount);
 
     // This can happen if profiles.ini has been reset by a version of Firefox
     // prior to 67 and the current profile is not the current default for the
@@ -642,8 +663,6 @@ class SelectableProfileServiceClass extends EventEmitter {
       async () => this.setDefaultProfileForGroup(),
       500
     );
-
-    this.#cachedProfileCount = await this.getProfileCount();
 
     // The 'activate' event listeners use #currentProfile, so this line has
     // to come after #currentProfile has been set.
@@ -951,6 +970,7 @@ class SelectableProfileServiceClass extends EventEmitter {
   async #updateTitlebar() {
     let previousCount = this.#cachedProfileCount;
     this.#cachedProfileCount = await this.getProfileCount();
+    Glean.profiles.profileCount.set(this.#cachedProfileCount);
 
     // We only need to update the titles if transitioning to or from a single profile.
     if (previousCount <= 1 || this.#cachedProfileCount <= 1) {
@@ -1587,7 +1607,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     }
 
     await this.initProfilesData();
-    await this.init(true);
+    await this.#init(true);
 
     await this.flushAllSharedPrefsToDatabase();
 

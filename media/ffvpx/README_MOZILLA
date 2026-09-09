@@ -142,6 +142,8 @@ Finally, apply the patches:
   stdio.h function, that causes bug 1879740 issue on Windows.
 - opusenc-dtx.patch to allow enabling DTX in the opus encoder.
 - libaomenc-svc.patch to allow configuring SVC in the libaom encoder.
+- libaomenc-color-metadata.patch to apply each AVFrame's color metadata in the
+  libaom encoder.
 - mediacodec_eos.patch to add a method to check definitely if a decoder has
   reached the end of stream on Android.
 - mediacodec_drm.patch to add support for encrypted packets on Android.
@@ -159,3 +161,4 @@ Finally, apply the patches:
   libavcodec's libvorbis wrapper, unlike its native vorbis decoder, does
   neither, so multichannel Vorbis plays with its channels permuted
   (bug 1991957). Drop this patch if it is ever fixed upstream.
+- av1_tilesize.patch to clean up av1 tile handling

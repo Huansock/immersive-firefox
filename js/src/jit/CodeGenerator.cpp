@@ -1384,6 +1384,16 @@ void CodeGenerator::testValueTruthyForType(
       }
       return;
     case JSVAL_TYPE_OBJECT: {
+      if (!ool) {
+        // If we have no ool path, then the hasSeenObjectEmulateUndefined fuse
+        // is intact, and all objects are truthy.
+        if (!skipTypeTest) {
+          masm.branchTestObject(Assembler::Equal, tag, ifTruthy);
+        } else {
+          masm.jump(ifTruthy);
+        }
+        return;
+      }
       Label notObject;
       if (!skipTypeTest) {
         masm.branchTestObject(Assembler::NotEqual, tag, &notObject);
@@ -1485,16 +1495,22 @@ void CodeGenerator::testValueTruthy(const ValueOperand& value,
 }
 
 void CodeGenerator::visitTestIAndBranch(LTestIAndBranch* test) {
-  Register input = ToRegister(test->input());
+  const LAllocation* input = test->input();
   MBasicBlock* ifTrue = test->ifTrue();
   MBasicBlock* ifFalse = test->ifFalse();
 
-  if (isNextBlock(ifFalse->lir())) {
-    masm.branchTest32(Assembler::NonZero, input, input,
-                      getJumpLabelForBranch(ifTrue));
+  bool fallThroughFalse = isNextBlock(ifFalse->lir());
+  Label* label = fallThroughFalse ? getJumpLabelForBranch(ifTrue)
+                                  : getJumpLabelForBranch(ifFalse);
+  if (input->isGeneralReg()) {
+    Register reg = ToRegister(input);
+    masm.branchTest32(fallThroughFalse ? Assembler::NonZero : Assembler::Zero,
+                      reg, reg, label);
   } else {
-    masm.branchTest32(Assembler::Zero, input, input,
-                      getJumpLabelForBranch(ifFalse));
+    masm.branch32(fallThroughFalse ? Assembler::NotEqual : Assembler::Equal,
+                  ToAddress(input), Imm32(0), label);
+  }
+  if (!fallThroughFalse) {
     jumpToBlock(ifTrue);
   }
 }
@@ -1575,7 +1591,7 @@ static Assembler::Condition ReverseCondition(Assembler::Condition condition) {
 void CodeGenerator::visitCompare(LCompare* comp) {
   MCompare::CompareType compareType = comp->mir()->compareType();
   Assembler::Condition cond = JSOpToCondition(compareType, comp->jsop());
-  Register left = ToRegister(comp->left());
+  const LAllocation* left = comp->left();
   const LAllocation* right = comp->right();
   Register output = ToRegister(comp->output());
 
@@ -1587,11 +1603,12 @@ void CodeGenerator::visitCompare(LCompare* comp) {
     if (right->isConstant()) {
       MOZ_ASSERT(compareType == MCompare::Compare_IntPtr ||
                  compareType == MCompare::Compare_UIntPtr);
-      masm.cmpPtrSet(cond, left, ImmWord(ToInt32(right)), output);
+      masm.cmpPtrSet(cond, ToRegister(left), ImmWord(ToInt32(right)), output);
     } else if (right->isGeneralReg()) {
-      masm.cmpPtrSet(cond, left, ToRegister(right), output);
+      masm.cmpPtrSet(cond, ToRegister(left), ToRegister(right), output);
     } else {
-      masm.cmpPtrSet(ReverseCondition(cond), ToAddress(right), left, output);
+      masm.cmpPtrSet(ReverseCondition(cond), ToAddress(right), ToRegister(left),
+                     output);
     }
     return;
   }
@@ -1600,11 +1617,16 @@ void CodeGenerator::visitCompare(LCompare* comp) {
              compareType == MCompare::Compare_UInt32);
 
   if (right->isConstant()) {
-    masm.cmp32Set(cond, left, Imm32(ToInt32(right)), output);
+    if (left->isGeneralReg()) {
+      masm.cmp32Set(cond, ToRegister(left), Imm32(ToInt32(right)), output);
+    } else {
+      masm.cmp32Set(cond, ToAddress(left), Imm32(ToInt32(right)), output);
+    }
   } else if (right->isGeneralReg()) {
-    masm.cmp32Set(cond, left, ToRegister(right), output);
+    masm.cmp32Set(cond, ToRegister(left), ToRegister(right), output);
   } else {
-    masm.cmp32Set(ReverseCondition(cond), ToAddress(right), left, output);
+    masm.cmp32Set(ReverseCondition(cond), ToAddress(right), ToRegister(left),
+                  output);
   }
 }
 
@@ -1726,7 +1748,7 @@ void CodeGenerator::visitStrictConstantCompareBooleanAndBranch(
 void CodeGenerator::visitCompareAndBranch(LCompareAndBranch* comp) {
   MCompare::CompareType compareType = comp->cmpMir()->compareType();
   Assembler::Condition cond = JSOpToCondition(compareType, comp->jsop());
-  Register left = ToRegister(comp->left());
+  const LAllocation* left = comp->left();
   const LAllocation* right = comp->right();
 
   MBasicBlock* ifTrue = comp->ifTrue();
@@ -1749,22 +1771,28 @@ void CodeGenerator::visitCompareAndBranch(LCompareAndBranch* comp) {
     if (right->isConstant()) {
       MOZ_ASSERT(compareType == MCompare::Compare_IntPtr ||
                  compareType == MCompare::Compare_UIntPtr);
-      masm.branchPtr(cond, left, ImmWord(ToInt32(right)), label);
+      masm.branchPtr(cond, ToRegister(left), ImmWord(ToInt32(right)), label);
     } else if (right->isGeneralReg()) {
-      masm.branchPtr(cond, left, ToRegister(right), label);
+      masm.branchPtr(cond, ToRegister(left), ToRegister(right), label);
     } else {
-      masm.branchPtr(ReverseCondition(cond), ToAddress(right), left, label);
+      masm.branchPtr(ReverseCondition(cond), ToAddress(right), ToRegister(left),
+                     label);
     }
   } else {
     MOZ_ASSERT(compareType == MCompare::Compare_Int32 ||
                compareType == MCompare::Compare_UInt32);
 
     if (right->isConstant()) {
-      masm.branch32(cond, left, Imm32(ToInt32(right)), label);
+      if (left->isGeneralReg()) {
+        masm.branch32(cond, ToRegister(left), Imm32(ToInt32(right)), label);
+      } else {
+        masm.branch32(cond, ToAddress(left), Imm32(ToInt32(right)), label);
+      }
     } else if (right->isGeneralReg()) {
-      masm.branch32(cond, left, ToRegister(right), label);
+      masm.branch32(cond, ToRegister(left), ToRegister(right), label);
     } else {
-      masm.branch32(ReverseCondition(cond), ToAddress(right), left, label);
+      masm.branch32(ReverseCondition(cond), ToAddress(right), ToRegister(left),
+                    label);
     }
   }
 
@@ -1924,8 +1952,11 @@ void CodeGenerator::visitTestOAndBranch(LTestOAndBranch* lir) {
 }
 
 void CodeGenerator::visitTestVAndBranch(LTestVAndBranch* lir) {
-  auto* ool = new (alloc()) OutOfLineTestObject();
-  addOutOfLineCode(ool, lir->mir());
+  OutOfLineTestObject* ool = nullptr;
+  if (!hasSeenObjectEmulateUndefinedFuseIntactAndDependencyNoted()) {
+    ool = new (alloc()) OutOfLineTestObject();
+    addOutOfLineCode(ool, lir->mir());
+  }
 
   Label* truthy = getJumpLabelForBranch(lir->ifTruthy());
   Label* falsy = getJumpLabelForBranch(lir->ifFalsy());
@@ -10588,12 +10619,10 @@ void CodeGenerator::visitWasmCall(LWasmCall* lir) {
       switchRealm = false;
       break;
     case wasm::CalleeDesc::BuiltinInstanceMethod: {
-      CodeOffset unused_trapStackMapKey;
-      masm.wasmCallBuiltinInstanceMethod(desc, callBase->instanceArg(),
-                                         callee.builtin(),
-                                         callBase->builtinMethodFailureMode(),
-                                         callBase->builtinMethodFailureTrap(),
-                                         &retOffset, &unused_trapStackMapKey);
+      masm.wasmCallBuiltinInstanceMethod(
+          desc, callBase->instanceArg(), callee.builtin(),
+          callBase->builtinMethodFailureMode(),
+          callBase->builtinMethodFailureTrap(), &retOffset, &secondRetOffset);
       // The builtin ABI preserves the instance and pinned registers. However,
       // builtins may grow the memory which requires us to reload the pinned
       // registers.
@@ -10640,7 +10669,9 @@ void CodeGenerator::visitWasmCall(LWasmCall* lir) {
   // single stackmap serves both: register this call's LSafepoint a second time
   // at the slow-path return offset.
   if (callee.which() == wasm::CalleeDesc::WasmTable ||
-      callee.which() == wasm::CalleeDesc::FuncRef) {
+      callee.which() == wasm::CalleeDesc::FuncRef ||
+      (callee.which() == wasm::CalleeDesc::BuiltinInstanceMethod &&
+       secondRetOffset.bound())) {
     markSafepointAt(secondRetOffset.offset(), lir);
   }
 
@@ -11110,8 +11141,9 @@ void CodeGenerator::visitWasmLoadTableElement(LWasmLoadTableElement* ins) {
 }
 
 void CodeGenerator::visitWasmDerivedPointer(LWasmDerivedPointer* ins) {
-  masm.movePtr(ToRegister(ins->base()), ToRegister(ins->output()));
-  masm.addPtr(Imm32(int32_t(ins->mir()->offset())), ToRegister(ins->output()));
+  masm.computeEffectiveAddress(
+      Address(ToRegister(ins->base()), int32_t(ins->mir()->offset())),
+      ToRegister(ins->output()));
 }
 
 void CodeGenerator::visitWasmDerivedIndexPointer(
@@ -15643,11 +15675,16 @@ void CodeGenerator::visitNotO(LNotO* lir) {
 }
 
 void CodeGenerator::visitNotV(LNotV* lir) {
-  auto* ool = new (alloc()) OutOfLineTestObjectWithLabels();
-  addOutOfLineCode(ool, lir->mir());
-
-  Label* ifTruthy = ool->label1();
-  Label* ifFalsy = ool->label2();
+  Label defaultTruthy, defaultFalsy;
+  Label* ifTruthy = &defaultTruthy;
+  Label* ifFalsy = &defaultFalsy;
+  OutOfLineTestObjectWithLabels* ool = nullptr;
+  if (!hasSeenObjectEmulateUndefinedFuseIntactAndDependencyNoted()) {
+    ool = new (alloc()) OutOfLineTestObjectWithLabels();
+    addOutOfLineCode(ool, lir->mir());
+    ifTruthy = ool->label1();
+    ifFalsy = ool->label2();
+  }
 
   ValueOperand input = ToValue(lir->input());
   Register tempToUnbox = ToTempUnboxRegister(lir->temp1());

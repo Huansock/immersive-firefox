@@ -422,11 +422,6 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
-        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_homepage_trending_recent_search).apply {
-            isChecked = settings.enableHomepageTrendingRecentSearch
-            onPreferenceChangeListener = SharedPreferenceUpdater()
-        }
-
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_persistent_debug_menu).apply {
             isVisible = true
             isChecked = settings.isDebugMenuPersistentlyRevealed
@@ -498,6 +493,12 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_tab_groups_strip).apply {
+            isVisible = Config.channel.isDebug
+            isChecked = settings.tabGroupsStripEnabled
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_migrate_collections_to_tab_groups).apply {
             isChecked = settings.migrateCollectionsToTabGroupsEnabled
             onPreferenceChangeListener = SharedPreferenceUpdater()
@@ -528,6 +529,12 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_show_voice_search_in_display_toolbar).apply {
             isVisible = Config.channel.isNightlyOrDebug
             isChecked = context.components.settings.showVoiceSearchInDisplayToolbar
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_toolbar_focus_mode).apply {
+            isVisible = Config.channel.isNightlyOrDebug
+            isChecked = context.components.settings.showAddressBarInFocusMode
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
     }

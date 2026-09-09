@@ -12,7 +12,7 @@ import re
 import subprocess
 import sys
 import time
-from collections import Counter, OrderedDict, namedtuple
+from collections import Counter, namedtuple
 from itertools import dropwhile, islice, takewhile
 from pathlib import Path
 from textwrap import TextWrapper
@@ -59,6 +59,7 @@ RE_BUILD_OUTPUT = re.compile(
     |(?P<info_cargo>^\s{3,}(?:Compiling|Downloading|Building|Finished|Fresh|Running|Documenting)\s)
     |(?P<warning_summary>^\d+\s+(?:compiler\s+)?warnings?\s+(?:generated|present)\.)
     |(?P<error_summary>^\d+\s+errors?\s+generated\.)
+    |(?P<python_traceback>^Traceback\ \(most\ recent\ call\ last\):)
     |(?P<make_error>make(?:\[\d+\])?\s*:\s*\*\*\*)
     |(?P<nsis_warning_block>^\d+\s+warnings?:)
     |(?P<error_block>^error(?:\[e\d+\])?:\s?)
@@ -133,8 +134,8 @@ class TierStatus:
 
     def __init__(self, resources, metrics):
         """Accepts a SystemResourceMonitor to record results against."""
-        self.tiers = OrderedDict()
-        self.tier_status = OrderedDict()
+        self.tiers = {}
+        self.tier_status = {}
         self.resources = resources
         self.metrics = metrics
 
@@ -816,6 +817,7 @@ class BuildOutputManager(OutputManager):
                             self._active_log_level = None
                         elif match_type in (
                             "error_summary",
+                            "python_traceback",
                             "make_error",
                             "error_block",
                         ):

@@ -79,6 +79,165 @@ describe("<WallpaperCategories>", () => {
     expect(container.querySelector(".wallpapers-reset")).toBeInTheDocument();
   });
 
+  it("does not offer wallpapers with visible set to false", () => {
+    const props = {
+      ...DEFAULT_PROPS,
+      Wallpapers: {
+        ...DEFAULT_PROPS.Wallpapers,
+        wallpaperList: [
+          { title: "moon", category: "celestial", theme: "light" },
+          {
+            title: "stars",
+            category: "celestial",
+            theme: "dark",
+            visible: true,
+          },
+          {
+            title: "retired",
+            category: "celestial",
+            theme: "light",
+            visible: false,
+          },
+        ],
+      },
+    };
+    const { container } = render(<WallpaperCategories {...props} />);
+    fireEvent.click(container.querySelector("#celestial"));
+
+    expect(container.querySelector("#moon")).toBeInTheDocument();
+    expect(container.querySelector("#stars")).toBeInTheDocument();
+    expect(container.querySelector("#retired")).not.toBeInTheDocument();
+    expect(
+      container.querySelectorAll('input[type="radio"].wallpaper-input')
+    ).toHaveLength(2);
+  });
+
+  describe("visibility_group", () => {
+    const GATED_LIST = [
+      { title: "moon", category: "celestial", theme: "light" },
+      {
+        title: "soccer-ball",
+        category: "celestial",
+        theme: "dark",
+        visibility_group: "soccer",
+      },
+    ];
+
+    const gatedProps = (groupValues = {}) => ({
+      ...DEFAULT_PROPS,
+      Prefs: { values: { ...DEFAULT_PROPS.Prefs.values, ...groupValues } },
+      Wallpapers: { ...DEFAULT_PROPS.Wallpapers, wallpaperList: GATED_LIST },
+    });
+
+    const openCelestial = props => {
+      const { container } = render(<WallpaperCategories {...props} />);
+      fireEvent.click(container.querySelector("#celestial"));
+      return container;
+    };
+
+    it("hides a gated wallpaper when no group is active", () => {
+      const container = openCelestial(gatedProps());
+      expect(container.querySelector("#moon")).toBeInTheDocument();
+      expect(container.querySelector("#soccer-ball")).not.toBeInTheDocument();
+    });
+
+    it("offers a gated wallpaper when the pref names its group", () => {
+      const container = openCelestial(
+        gatedProps({ "newtabWallpapers.visibilityGroups": "soccer" })
+      );
+      expect(container.querySelector("#soccer-ball")).toBeInTheDocument();
+    });
+
+    it("parses a multi-group pref and trims whitespace", () => {
+      const container = openCelestial(
+        gatedProps({ "newtabWallpapers.visibilityGroups": "worldcup, soccer" })
+      );
+      expect(container.querySelector("#soccer-ball")).toBeInTheDocument();
+    });
+
+    it("lets trainhopConfig activate a group with the pref unset", () => {
+      const container = openCelestial(
+        gatedProps({
+          "newtabWallpapers.visibilityGroups": "",
+          trainhopConfig: { wallpapers: { visibilityGroups: "soccer" } },
+        })
+      );
+      expect(container.querySelector("#soccer-ball")).toBeInTheDocument();
+    });
+
+    it("ignores a malformed trainhop value and falls back to the pref", () => {
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+      const container = openCelestial(
+        gatedProps({
+          "newtabWallpapers.visibilityGroups": "soccer",
+          trainhopConfig: { wallpapers: { visibilityGroups: ["soccer"] } },
+        })
+      );
+
+      // Renders rather than throwing, and the pref still activates the group.
+      expect(container.querySelector("#soccer-ball")).toBeInTheDocument();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("does not throw when the trainhop value is a non-string and no pref is set", () => {
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+      const container = openCelestial(
+        gatedProps({
+          trainhopConfig: { wallpapers: { visibilityGroups: 5 } },
+        })
+      );
+
+      expect(container.querySelector("#moon")).toBeInTheDocument();
+      expect(container.querySelector("#soccer-ball")).not.toBeInTheDocument();
+      warn.mockRestore();
+    });
+
+    it("keeps hiding a gated wallpaper that is also visible: false", () => {
+      const props = {
+        ...DEFAULT_PROPS,
+        Prefs: {
+          values: {
+            ...DEFAULT_PROPS.Prefs.values,
+            "newtabWallpapers.visibilityGroups": "soccer",
+          },
+        },
+        Wallpapers: {
+          ...DEFAULT_PROPS.Wallpapers,
+          wallpaperList: [
+            { title: "moon", category: "celestial", theme: "light" },
+            {
+              title: "soccer-ball",
+              category: "celestial",
+              theme: "dark",
+              visibility_group: "soccer",
+              visible: false,
+            },
+          ],
+        },
+      };
+      const container = openCelestial(props);
+      expect(container.querySelector("#soccer-ball")).not.toBeInTheDocument();
+    });
+
+    it("leaves ungated wallpapers alone whatever the groups say", () => {
+      const container = openCelestial(
+        gatedProps({ "newtabWallpapers.visibilityGroups": "unrelated" })
+      );
+      expect(container.querySelector("#moon")).toBeInTheDocument();
+    });
+
+    it("hides a gated wallpaper even while it is the selected one", () => {
+      const props = {
+        ...gatedProps(),
+        activeWallpaper: "soccer-ball",
+      };
+      props.Prefs.values["newtabWallpapers.wallpaper"] = "soccer-ball";
+      const container = openCelestial(props);
+      expect(container.querySelector("#soccer-ball")).not.toBeInTheDocument();
+    });
+  });
+
   it("opens the requested category when deep-linked via App state", () => {
     const onSubpanelToggle = jest.fn();
     const ref = React.createRef();
@@ -131,6 +290,35 @@ describe("<WallpaperCategories>", () => {
 
     // "firefox" is not in DEFAULT_PROPS categories, so nothing should open.
     expect(ref.current.state.activeCategory).toBeNull();
+  });
+
+  it("names the back button and keeps the category title as a heading", () => {
+    const novaProps = {
+      ...DEFAULT_PROPS,
+      Prefs: {
+        values: {
+          ...DEFAULT_PROPS.Prefs.values,
+          "nova.enabled": true,
+        },
+      },
+    };
+    const { container } = render(<WallpaperCategories {...novaProps} />);
+    fireEvent.click(container.querySelector("#celestial"));
+
+    const wrapper = container.querySelector(
+      ".wallpaper-list.category .arrow-wrapper"
+    );
+    expect(wrapper).toBeInTheDocument();
+
+    const backButton = wrapper.querySelector("moz-button.arrow-button");
+    expect(backButton).toHaveAttribute(
+      "data-l10n-id",
+      "newtab-customize-panel-back-button"
+    );
+    expect(wrapper.querySelector("h2")).toHaveAttribute(
+      "data-l10n-id",
+      "newtab-wallpaper-category-title-celestial"
+    );
   });
 
   it("should clear initialWallpaper when a custom colour is set", () => {

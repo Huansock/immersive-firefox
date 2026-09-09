@@ -319,10 +319,8 @@ Maybe<SurfaceDescriptor> Image::GetDescFromTexClient(
     return {};
   }
 
-  const auto& tcd = tc->GetInternalData();
-
   SurfaceDescriptor ret;
-  if (!tcd->Serialize(ret)) {
+  if (!tc->ToSurfaceDescriptor(ret)) {
     return {};
   }
   return Some(ret);
@@ -401,6 +399,7 @@ void ImageContainer::SetCurrentImageInternal(
     img->mRtpTimestamp = aImages[i].mRtpTimestamp;
     img->mFrameID = aImages[i].mFrameID;
     img->mProducerID = aImages[i].mProducerID;
+    img->mRotation = aImages[i].mRotation;
     for (const auto& oldImg : mCurrentImages) {
       if (oldImg.mFrameID == img->mFrameID &&
           oldImg.mProducerID == img->mProducerID) {

@@ -118,7 +118,7 @@ use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureStat
 use plane_split::{Clipper, Polygon};
 use crate::prim_store::{PictureIndex, PrimitiveInstance, PrimitiveKind};
 use crate::prim_store::storage::Index as StorageIndex;
-use crate::visibility::{PrimitiveDrawHeader, PrimitiveDrawIndex};
+use crate::visibility::PrimitiveDrawHeader;
 use crate::prim_store::{PrimitiveScratchBuffer, ClipTaskIndex, ClipMaskKind};
 use crate::prim_store::storage;
 use crate::print_tree::PrintTreePrinter;
@@ -144,7 +144,6 @@ use crate::tile_cache::{SliceId, TileCacheInstance, TileSurface, NativeSurface};
 use crate::tile_cache::{BackdropKind, BackdropSurface};
 use crate::tile_cache::{TileKey, SubSliceIndex};
 use crate::invalidation::InvalidationReason;
-use crate::tile_cache::MAX_SURFACE_SIZE;
 
 use crate::picture_composite_mode::{PictureCompositeMode, prepare_composite_mode};
 
@@ -742,14 +741,6 @@ impl PictureInstance {
             frame_context.spatial_tree,
         );
 
-        let map_pic_to_vis = SpaceMapper::new_with_target(
-            // TODO: switch from root to raster space.
-            frame_context.root_spatial_node_index,
-            surface_spatial_node_index,
-            surface.culling_rect,
-            frame_context.spatial_tree,
-        );
-
         // TODO: When moving VisRect to raster space, compute the picture
         // bounds by projecting the parent surface's culling rect into the
         // current surface's raster space.
@@ -801,10 +792,7 @@ impl PictureInstance {
                     self.prev_local_rect = local_rect;
                 }
 
-                let max_surface_size = frame_context
-                    .fb_config
-                    .max_surface_override
-                    .unwrap_or(MAX_SURFACE_SIZE) as f32;
+                let max_surface_size = frame_context.max_surface_size() as f32;
 
                 let surface_rects = match get_surface_rects(
                     raster_config.surface_index,
@@ -858,7 +846,7 @@ impl PictureInstance {
 
         let state = PictureState {
             map_local_to_pic,
-            map_pic_to_vis,
+            map_pic_to_device,
         };
 
         let mut dirty_region_count = 0;
@@ -881,8 +869,6 @@ impl PictureInstance {
         let context = PictureContext {
             pic_index,
             raster_spatial_node_index: frame_state.surfaces[surface_index.0].raster_spatial_node_index,
-            // TODO: switch the visibility spatial node from the root to raster space.
-            visibility_spatial_node_index: frame_context.root_spatial_node_index,
             surface_spatial_node_index,
             surface_index,
             dirty_region_count,
@@ -954,8 +940,18 @@ impl PictureInstance {
                         frame_context.spatial_tree,
                     );
 
+                    // The plane's footprint, bounded by the primitive's coverage
+                    // rect. `context.surface_index` is the surface this block
+                    // already resolves the plane's transform against.
+                    let device_rect = frame_state.surfaces[context.surface_index.0]
+                        .map_to_device_rect(
+                            &draw.clip_chain.pic_coverage_rect,
+                            frame_context.spatial_tree,
+                        );
+
                     let prim_cmd = PrimitiveCommand::split_composite(
                         child.anchor.draw_index,
+                        device_rect,
                         child.gpu_address,
                         transform_id,
                         src_task_id,
@@ -966,7 +962,7 @@ impl PictureInstance {
                         &prim_cmd,
                         child.anchor.spatial_node_index,
                         &cmd_buffer_targets,
-                    );
+                    );                        
                 }
             }
         }
@@ -1046,13 +1042,24 @@ impl PictureInstance {
                 // right space here, we should be able to find the dirty rect in this space
                 // that was built during the dirty rect propagation at the beginning of the
                 // frame.
-                let map_ancestor_to_vis = SpaceMapper::<LayoutPixel, VisPixel>::new_with_target(
-                    visibility_spatial_node_index,
+                // The 3D context's containing block is normally inside the
+                // surface the dirty rect belongs to, but if it is not there is
+                // no transform between the two to ask for, and "no lateral
+                // bounds" is the same conservative answer as a failed unmap.
+                let ancestor_dirty_rect = if spatial_tree.can_get_relative_transform(
                     ancestor_spatial_node_index,
-                    VisRect::max_rect(),
-                    spatial_tree,
-                );
-                let ancestor_dirty_rect = map_ancestor_to_vis.unmap(&dirty_rect);
+                    visibility_spatial_node_index,
+                ) {
+                    let map_ancestor_to_vis = SpaceMapper::<LayoutPixel, VisPixel>::new_with_target(
+                        visibility_spatial_node_index,
+                        ancestor_spatial_node_index,
+                        VisRect::max_rect(),
+                        spatial_tree,
+                    );
+                    map_ancestor_to_vis.unmap(&dirty_rect)
+                } else {
+                    None
+                };
 
                 let ancestor_bounds = ancestor_dirty_rect.map(|r| r.cast().to_rect().to_untyped());
 
@@ -1238,7 +1245,7 @@ impl PictureInstance {
                 // whether content rasterized into this surface should be snapped:
                 // false for a non-snapping raster root, where snapping against its
                 // own scaled node would collapse content (see `raster-root-huge-scale`).
-                let (device_pixel_scale, raster_spatial_node_index, surface_snaps, local_scale, world_scale_factors) = match composite_mode {
+                let (device_pixel_scale, raster_spatial_node_index, surface_snaps, local_scale, world_scale_factors, blur_scale_factors) = match composite_mode {
                     PictureCompositeMode::TileCache { slice_id } => {
                         let tile_cache = tile_caches.get_mut(&slice_id).unwrap();
 
@@ -1284,7 +1291,7 @@ impl PictureInstance {
                         let device_pixel_scale = Scale::new(scaling_factor);
 
                         // Tile caches snap against their own (scroll-stable) raster node.
-                        (device_pixel_scale, surface_spatial_node_index, true, (1.0, 1.0), world_scale_factors)
+                        (device_pixel_scale, surface_spatial_node_index, true, (1.0, 1.0), world_scale_factors, world_scale_factors)
                     }
                     _ => {
                         let surface_spatial_node = frame_context.spatial_tree.get_spatial_node(surface_spatial_node_index);
@@ -1305,7 +1312,16 @@ impl PictureInstance {
                             let local_scale = local_to_raster_transform.scale_factors();
 
                             // Root-snapping surface: raster node is root, content snaps.
-                            (Scale::new(1.0), raster_spatial_node_index, true, local_scale, (1.0, 1.0))
+                            //
+                            // `world_scale_factors` is what a child surface multiplies
+                            // its own child-to-parent scale by to obtain child-to-device,
+                            // and reporting (1, 1) there is only correct while root
+                            // raster space *is* device space. APZ breaks that when it
+                            // writes a pinch-zoom scale into a bound spatial node
+                            // transform, so a child establishing its own raster root lost
+                            // the zoom and rasterized its targets that many times too
+                            // small (bug 1899692).
+                            (Scale::new(1.0), raster_spatial_node_index, true, local_scale, local_scale, (1.0, 1.0))
                         } else {
                             // If client supplied a specific local scale, use that instead of
                             // estimating from parent transform
@@ -1321,7 +1337,7 @@ impl PictureInstance {
                             // Non-snapping raster root: its raster node is its own
                             // (scaled) node, so content is left unsnapped — snapping
                             // through the surface's local scale would collapse it.
-                            (device_pixel_scale, surface_spatial_node_index, false, (1.0, 1.0), world_scale_factors)
+                            (device_pixel_scale, surface_spatial_node_index, false, (1.0, 1.0), world_scale_factors, world_scale_factors)
                         }
                     }
                 };
@@ -1333,6 +1349,7 @@ impl PictureInstance {
                     &frame_context.spatial_tree,
                     device_pixel_scale,
                     world_scale_factors,
+                    blur_scale_factors,
                     local_scale,
                     surface_snaps,
                     force_scissor_rect,
@@ -2549,7 +2566,6 @@ pub fn prepare_picture_clips(
 pub fn prepare_picture_primitive(
     pic: &PictureInstance,
     raster_config: &RasterConfig,
-    draw_index: PrimitiveDrawIndex,
     prim_spatial_node_index: SpatialNodeIndex,
     _clip_chain: &ClipChainInstance,
     frame_context: &FrameBuildingContext,
@@ -2794,7 +2810,6 @@ pub fn prepare_picture_primitive(
                     aligned_aa_edges: EdgeMask::empty(),
                     transformed_aa_edges: EdgeMask::all(),
                 },
-                draw_index,
                 &None,
                 &composite_clip_chain,
                 transform,
@@ -2865,7 +2880,6 @@ pub fn prepare_picture_primitive(
             aligned_aa_edges: EdgeMask::empty(),
             transformed_aa_edges: EdgeMask::all(),
         },
-        draw_index,
         &None,
         &composite_clip_chain,
         transform,
@@ -2883,6 +2897,7 @@ pub fn prepare_picture_primitive(
 #[test]
 fn test_large_surface_scale_1() {
     use crate::spatial_tree::{SceneSpatialTree, SpatialTree};
+    use crate::tile_cache::MAX_SURFACE_SIZE;
 
     let mut cst = SceneSpatialTree::new();
     let root_reference_frame_index = cst.root_reference_frame_index();
@@ -2905,12 +2920,14 @@ fn test_large_surface_scale_1() {
             is_opaque: true,
             clipping_rect: PictureRect::max_rect(),
             culling_rect: VisRect::max_rect(),
+            culling_rect_projection_failed: false,
             map_local_to_picture: map_local_to_picture.clone(),
             raster_spatial_node_index: root_reference_frame_index,
             surface_spatial_node_index: root_reference_frame_index,
             visibility_spatial_node_index: root_reference_frame_index,
             device_pixel_scale: DevicePixelScale::new(1.0),
             world_scale_factors: (1.0, 1.0),
+            blur_scale_factors: (1.0, 1.0),
             local_scale: (1.0, 1.0),
             allow_snapping: true,
             force_scissor_rect: false,
@@ -2925,12 +2942,14 @@ fn test_large_surface_scale_1() {
             is_opaque: true,
             clipping_rect: PictureRect::max_rect(),
             culling_rect: VisRect::max_rect(),
+            culling_rect_projection_failed: false,
             map_local_to_picture,
             raster_spatial_node_index: root_reference_frame_index,
             surface_spatial_node_index: root_reference_frame_index,
             visibility_spatial_node_index: root_reference_frame_index,
             device_pixel_scale: DevicePixelScale::new(43.82798767089844),
             world_scale_factors: (1.0, 1.0),
+            blur_scale_factors: (1.0, 1.0),
             local_scale: (1.0, 1.0),
             allow_snapping: true,
             force_scissor_rect: false,
@@ -2984,6 +3003,7 @@ fn test_drop_filter_dirty_region_outside_prim() {
 
     use api::Shadow;
     use crate::spatial_tree::{SceneSpatialTree, SpatialTree};
+    use crate::tile_cache::MAX_SURFACE_SIZE;
 
     let mut cst = SceneSpatialTree::new();
     let root_reference_frame_index = cst.root_reference_frame_index();
@@ -3011,11 +3031,13 @@ fn test_drop_filter_dirty_region_outside_prim() {
             visibility_spatial_node_index: root_reference_frame_index,
             device_pixel_scale: DevicePixelScale::new(1.0),
             world_scale_factors: (1.0, 1.0),
+            blur_scale_factors: (1.0, 1.0),
             local_scale: (1.0, 1.0),
             allow_snapping: true,
             force_scissor_rect: false,
             svgfe_source_map: ScaleOffset::identity(),
             culling_rect: VisRect::max_rect(),
+            culling_rect_projection_failed: false,
         },
         SurfaceInfo {
             unclipped_local_rect: PictureRect::new(
@@ -3034,11 +3056,13 @@ fn test_drop_filter_dirty_region_outside_prim() {
             visibility_spatial_node_index: root_reference_frame_index,
             device_pixel_scale: DevicePixelScale::new(1.0),
             world_scale_factors: (1.0, 1.0),
+            blur_scale_factors: (1.0, 1.0),
             local_scale: (1.0, 1.0),
             allow_snapping: true,
             force_scissor_rect: false,
             svgfe_source_map: ScaleOffset::identity(),
             culling_rect: VisRect::max_rect(),
+            culling_rect_projection_failed: false,
         },
     ];
 
@@ -3093,6 +3117,7 @@ fn test_drop_filter_partial_dirty_content_inflate() {
 
     use api::Shadow;
     use crate::spatial_tree::{SceneSpatialTree, SpatialTree};
+    use crate::tile_cache::MAX_SURFACE_SIZE;
 
     let mut cst = SceneSpatialTree::new();
     let root_reference_frame_index = cst.root_reference_frame_index();
@@ -3128,11 +3153,13 @@ fn test_drop_filter_partial_dirty_content_inflate() {
             visibility_spatial_node_index: root_reference_frame_index,
             device_pixel_scale: DevicePixelScale::new(1.0),
             world_scale_factors: (1.0, 1.0),
+            blur_scale_factors: (1.0, 1.0),
             local_scale: (1.0, 1.0),
             allow_snapping: true,
             force_scissor_rect: false,
             svgfe_source_map: ScaleOffset::identity(),
             culling_rect: VisRect::max_rect(),
+            culling_rect_projection_failed: false,
         },
         SurfaceInfo {
             unclipped_local_rect: PictureRect::new(
@@ -3151,11 +3178,13 @@ fn test_drop_filter_partial_dirty_content_inflate() {
             visibility_spatial_node_index: root_reference_frame_index,
             device_pixel_scale: DevicePixelScale::new(1.0),
             world_scale_factors: (1.0, 1.0),
+            blur_scale_factors: (1.0, 1.0),
             local_scale: (1.0, 1.0),
             allow_snapping: true,
             force_scissor_rect: false,
             svgfe_source_map: ScaleOffset::identity(),
             culling_rect: VisRect::max_rect(),
+            culling_rect_projection_failed: false,
         },
     ];
 

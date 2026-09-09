@@ -75,6 +75,7 @@ import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.thumbnails.BrowserThumbnails
+import mozilla.components.browser.thumbnails.facts.BrowserThumbnailsFacts
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
 import mozilla.components.concept.base.crash.Breadcrumb
@@ -636,6 +637,7 @@ abstract class BaseBrowserFragment :
                     tabsUseCases = context.components.useCases.tabsUseCases,
                     sendTabUseCases = SendTabUseCases(requireComponents.backgroundServices.accountManager),
                     customTabSessionId = customTabSessionId,
+                    applicationScope = context.components.applicationScope,
                     viewHasFocus = { view.hasWindowFocus() },
                 ),
             owner = this,
@@ -1763,7 +1765,9 @@ abstract class BaseBrowserFragment :
     }
 
     private fun onTabCounterClicked(browsingMode: BrowsingMode) {
-        thumbnailsFeature.get()?.requestScreenshot()
+        thumbnailsFeature
+            .get()
+            ?.requestScreenshot(trigger = BrowserThumbnailsFacts.CaptureAttemptedTriggers.TAB_COUNTER_CLICK)
         findNavController()
             .nav(
                 R.id.browserFragment,

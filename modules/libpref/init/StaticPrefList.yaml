@@ -1839,6 +1839,14 @@
   value: false
   mirror: always
 
+# How many times a crashed HWInference process is restarted before giving up,
+# leaving the features relying on it unavailable. Reset once the process is
+# shut down cleanly, i.e. because its last consumer went away.
+- name: browser.ml.hwinference.max_restarts
+  type: uint32_t
+  value: 3
+  mirror: always
+
 - name: browser.navigation.requireUserInteraction
   type: bool
   value: true
@@ -2373,11 +2381,7 @@
 # back from the in-process clipboard cache is unaffected).
 - name: clipboard.readCustomFormatsFromClipboard.enabled
   type: RelaxedAtomicBool
-#if defined(ANDROID)
-  value: false
-#else
   value: @IS_NIGHTLY_BUILD@
-#endif
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -2713,11 +2717,7 @@
 # Master gate for the web custom format support in the Async Clipboard API.
 - name: dom.clipboard.customFormatSupport.enabled
   type: RelaxedAtomicBool
-#if defined(ANDROID)
-  value: false
-#else
   value: @IS_NIGHTLY_BUILD@
-#endif
   mirror: always
 
 # HTML specification says the level should be 5
@@ -3845,6 +3845,18 @@
   #endif
     mirror: always
 #endif /* XP_DARWIN */
+
+# How long a utility process can take to acknowledge the shutdown request and
+# close its IPC channel. If the process exceeds the timeout, we kill it. A
+# value of 0 disables the timeout entirely.
+- name: dom.ipc.utilityProcess.shutdownTimeoutSecs
+  type: uint32_t
+#if !defined(DEBUG) && !defined(MOZ_ASAN) && !defined(MOZ_VALGRIND) && !defined(MOZ_TSAN)
+  value: 5
+#else
+  value: 0
+#endif
+  mirror: always
 
 # If this is true, keypress events for non-printable keys are dispatched only
 # for event listeners of the system event group in web content.
@@ -5133,6 +5145,13 @@
   value: false
   mirror: always
 
+# Sanitize during HTML parsing, rather than the reified tree.
+# (https://github.com/whatwg/html/pull/12756)
+- name: dom.security.sanitizer.while-parsing
+  type: bool
+  value: false
+  mirror: always
+
 # pref controls `digital` credentials being exposed
 - name: dom.security.credentialmanagement.digital.enabled
   type: bool
@@ -6232,6 +6251,11 @@
 - name: dom.webnotifications.enabled
   type: RelaxedAtomicBool
   value: true
+  mirror: always
+
+- name: dom.webnotifications.navigate.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
 
 - name: dom.webnotifications.privateBrowsing.enabled
@@ -7767,11 +7791,6 @@
 #endif
   mirror: always
 
-- name: gfx.e10s.font-list.shared
-  type: bool
-  value: true
-  mirror: once
-
 # Do we fire a notification about missing fonts, so the front-end can decide
 # whether to try and do something about it (e.g. download additional fonts)?
 - name: gfx.missing_fonts.notify
@@ -8160,6 +8179,21 @@
   type: bool
   value: true
   mirror: once
+
+- name: gfx.webrender.flip-sequential
+  type: bool
+  value: false
+  mirror: once
+
+- name: gfx.webrender.dcomp-win.enabled
+  type: bool
+  value: true
+  mirror: once
+
+- name: gfx.webrender.triple-buffering.enabled
+  type: bool
+  value: true
+  mirror: once
 #endif
 
 - name: gfx.webrender.svg-filter-effects
@@ -8407,7 +8441,7 @@
 
 - name: gfx.webrender.layer-compositor
   type: RelaxedAtomicBool
-#if defined(XP_WIN)
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
   value: true
 #else
   value: false
@@ -9012,12 +9046,6 @@
   value: 2.5f
   mirror: always
 
-# Whether EXIF density metadata is sanity checked against PixelXDimension and PixelYDimension
-- name: image.exif-density-correction.sanity-check.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-
 # The threshold for inferring that changes to an <img> element's |src|
 # attribute by JavaScript represent an animation, in milliseconds. If the |src|
 # attribute is changing more frequently than this value, then we enter a
@@ -9184,6 +9212,20 @@
   type: RelaxedAtomicBool
   value: @IS_NIGHTLY_BUILD@
   mirror: always
+
+# How many threads may work on a single JXL image decode, counting the thread doing the
+# decode, which takes a share of the work as well as waiting for the others. The pool is
+# asked for one fewer than this because of that. 0 means decide based on the machines
+# number of cpus clamped to between 2 and 8. 1 means the decoding thread by itself, so
+# parallel decoding is off. Any other value is taken literally. Takes effect on the next
+# decode, but the pool's thread limit is fixed by the first parallel decode of the
+# process, so lowering this later uses less of the pool while raising it past that limit
+# does not add threads.
+- name: image.jxl.decode_participants
+  type: RelaxedAtomicUint32
+  value: 0
+  mirror: always
+  rust: true
 
 #endif
 
@@ -9750,6 +9792,13 @@
 
   # Experimental support for import bytes in JavaScript.
 - name: javascript.options.experimental.import_bytes
+  type: bool
+  value: false
+  mirror: always
+  set_spidermonkey_pref: startup
+
+  # Experimental support for including default in export * declarations.
+- name: javascript.options.experimental.export_star_default
   type: bool
   value: false
   mirror: always
@@ -12240,14 +12289,19 @@
   mirror: always
 
 # MediaCapabilities
-- name: media.mediacapabilities.drop-threshold
-  type: RelaxedAtomicInt32
-  value: 95
-  mirror: always
-
 - name: media.mediacapabilities.from-database
   type: RelaxedAtomicBool
   value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
+# When true, MediaCapabilities answers non-WebRTC decoding support queries from
+# the cached codec-support snapshot (PDMFactorySupport), waiting asynchronously
+# for remote processes to report their support. When false, it falls back to
+# the original behaviour of creating a decoder and querying it (video) or a
+# synchronous PDMFactorySupport query (audio).
+- name: media.mediacapabilities.codec-support-cache.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
 
 # Enable WebRTC type support in Media Capabilities API.
@@ -12334,12 +12388,6 @@
   value: false
   mirror: always
 
-# Whether to enable experimental requestVideoFrameCallback support
-- name: media.rvfc.enabled
-  type: bool
-  value: true
-  mirror: always
-
 # true for talos tests so that VideoSink passes on the most recently decoded
 # frame to exercise the compositor even when the frame is out of date because
 # the decoder is stressed.
@@ -12369,17 +12417,6 @@
 #else
   value: true
 #endif
-  mirror: always
-
-# Whether we expose the functionality proposed in
-# https://w3c.github.io/encrypted-media/#ref-for-dom-mediakeysystemmediacapability-encryptionscheme-2
-# I.e. if true, apps calling navigator.requestMediaKeySystemAccess() can pass
-# an optional encryption scheme as part of MediaKeySystemMediaCapability
-# objects. If a scheme is present when we check for support, we must ensure we
-# support that scheme in order to provide key system access.
-- name: media.eme.encrypted-media-encryption-scheme.enabled
-  type: bool
-  value: true
   mirror: always
 
 # Do we need explicit approval from the application to allow access to EME?
@@ -12523,7 +12560,11 @@
 # for platform implemented codecs in the RDD or GPU process.
 - name: media.use-remote-encoder.video.platform
   type: RelaxedAtomicBool
+#ifdef NIGHTLY_BUILD
   value: @IS_NOT_ANDROID@
+#else
+  value: false
+#endif
   mirror: always
 
 # Specifies whether the PEMFactory can create PEMs for remote video encoding
@@ -12544,7 +12585,11 @@
 
 - name: media.gpu-process-encoder
   type: RelaxedAtomicBool
+#ifdef NIGHTLY_BUILD
   value: @IS_XP_WIN@
+#else
+  value: false
+#endif
   mirror: always
 
 - name: media.ffvpx-hw.enabled
@@ -13249,25 +13294,44 @@
   value: false
   mirror: always
 
-- name: media.webspeech.test.fake_fsm_events
+- name: media.webspeech.recognition.enable
   type: bool
   value: false
   mirror: always
 
-- name: media.webspeech.test.fake_recognition_service
+# Whether start() offers to download the on-device model for its language when
+# that model is supported but not installed yet, instead of failing the session
+# with service-not-allowed. The prompt and the download are install()'s; every
+# event, "start" included, waits for the model. Pages predating install() only
+# ever call start(), hence the default.
+- name: media.webspeech.recognition.install_on_start
   type: bool
-  value: false
+  value: true
   mirror: always
 
--   name: media.webspeech.recognition.enable
-    type: bool
-    value: false
-    mirror: always
+# How long the HWInference connection (and with it the utility process, when
+# nothing else holds it) is kept alive after the last recognition session ends
+# and the last availability/install call settles. Absorbs stop()/start()
+# cycles and bursts of static calls, which would otherwise pay for a process
+# relaunch each time. 0 tears it down immediately, which is what tests want.
+- name: media.webspeech.recognition.idle_shutdown_grace_ms
+  type: uint32_t
+  value: 5000
+  mirror: always
 
--   name: media.webspeech.synth.enabled
-    type: bool
-    value: true
-    mirror: always
+# Delays the recognition thread, right before it acquires the parent actor's
+# lock during session init, by this many milliseconds. Used by tests to
+# deterministically land actor teardown in that window instead of relying on
+# scheduling luck. 0 (default) means no delay.
+- name: media.webspeech.recognition.testing.parakeet_init_delay_ms
+  type: RelaxedAtomicInt32
+  value: 0
+  mirror: always
+
+- name: media.webspeech.synth.enabled
+  type: bool
+  value: true
+  mirror: always
 #endif  # MOZ_WEBSPEECH
 
 - name: media.encoder.webm.enabled
@@ -13578,6 +13642,21 @@
 # capabilities, while still capturing from VideoCaptureFake. Has no effect
 # unless `media.getusermedia.camera.fake.force` is also true.
 - name: media.getusermedia.camera.fake.no_capabilities
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# Rotation in degrees (0/90/180/270) reported by fake video capture sources.
+# Allows mochitests to exercise camera rotation handling without real hardware.
+- name: media.getusermedia.camera.fake.rotation
+  type: RelaxedAtomicInt32
+  value: 0
+  mirror: always
+
+# When true, the fake video capture device generates a static test pattern
+# (red background with a blue bottom-right quadrant) instead of the animated
+# default. Lets mochitests verify pixel-level rotation.
+- name: media.getusermedia.camera.fake.rotation-test-pattern
   type: RelaxedAtomicBool
   value: false
   mirror: always
@@ -14461,6 +14540,14 @@
   value: true
   mirror: always
 
+#ifdef XP_MACOSX
+# Whether the gssapi library is the one shipped with the OS.
+- name: network.negotiate-auth.using-native-gsslib
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+#endif
+
 # Chunk size for BackgroundFileSaver async copy operations. Should be a power
 # of 2 for optimal performance.
 - name: network.backgroundfilesaver.async_copy_chunk_size
@@ -14636,12 +14723,6 @@
   value: true
   mirror: always
 
-# If true content types of multipart/x-mixed-replace cannot set a cookie
-- name: network.cookie.prevent_set_cookie_from_multipart
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-
 # Use sever time (Date header) to adjust the expire cookie attribute
 - name: network.cookie.useServerTime
   type: RelaxedAtomicBool
@@ -14724,13 +14805,6 @@
 - name: network.http.idempotencyKey.enabled
   type: RelaxedAtomicBool
   value: false
-  mirror: always
-
-# Whether to respect the redirected-tainted origin flag
-# https://fetch.spec.whatwg.org/#concept-request-tainted-origin
-- name: network.http.origin.redirectTainted
-  type: bool
-  value: true
   mirror: always
 
 # Bug 1965430: Use TriggeringPrincipal instead of LoadingPrincipal to
@@ -17054,11 +17128,7 @@
 
 - name: network.http.happy_eyeballs_enabled
   type: RelaxedAtomicBool
-#if defined(ANDROID)
   value: @IS_NIGHTLY_BUILD@
-#else
-  value: true
-#endif
   mirror: always
 
 # When true, Happy Eyeballs is also used for requests carrying an HTTP
@@ -17304,8 +17374,8 @@
   value: false
   mirror: always
 
-# Replace PDFs embedded with an object/embed element by a page offering to open
-# them, when the viewer is disabled. That page is only packaged on desktop, see
+# Show an open-PDF fallback for PDF loads from object, embed, frame, and iframe
+# elements when the built-in viewer is disabled. Desktop only; see
 # toolkit/components/pdfjs/jar.mn.
 - name: pdfjs.embedFallback
   type: bool
@@ -17314,6 +17384,13 @@
 #else
   value: true
 #endif
+  mirror: always
+
+# Whether PDFs loaded from attributes of unsandboxed frame/iframe elements
+# bypass the configured handler, like object/embed loads.
+- name: pdfjs.handleFrameAttributeLoads
+  type: bool
+  value: true
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -17681,12 +17758,6 @@
 # Enable the clearing of cache data using the clear-site-data header. If enabled,
 # header values of "cache" and "*" will clear cached data from the origin
 - name: privacy.clearSiteDataHeader.cache.enabled
-  type: bool
-  value: true
-  mirror: always
-
-# Also enable the clearing the bfcache for "Clear-Site-Data"-Header
-- name: privacy.clearSiteDataHeader.cache.bfcache.enabled
   type: bool
   value: true
   mirror: always
@@ -18640,6 +18711,12 @@
     value: true
     mirror: always
 
+# If enabled, excepts all JOB_OBJECT_UILIMIT_* flags from the GPU process's job.
+-   name: security.sandbox.gpu.disable-job-uilimits
+    type: RelaxedAtomicBool
+    value: false
+    mirror: always
+
 -   name: security.sandbox.gmp.shadow-stack.enabled
     type: RelaxedAtomicBool
     value: true
@@ -19112,12 +19189,12 @@
   type: RelaxedAtomicBool
   value: false
   mirror: always
-
-- name: security.tls.client_hello.send_p256_keyshare
-  type: RelaxedAtomicBool
-  value: @IS_NOT_NIGHTLY_BUILD@
-  mirror: always
   rust: true
+
+- name: security.tls.enable_mldsa
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
 
 - name: security.tls.enable_certificate_compression_zlib
   type: RelaxedAtomicBool

@@ -9,16 +9,16 @@
 //! need to update the checked-in files for Servo.
 
 use crate::gecko_bindings::structs::PseudoStyleType;
+use crate::pref;
 use crate::properties::longhands::display::computed_value::T as Display;
 use crate::properties::{ComputedValues, PropertyFlags};
 use crate::selector_parser::PseudoElementCascadeType;
 use crate::str::{starts_with_ignore_ascii_case, string_as_ascii_lowercase};
 use crate::string_cache::Atom;
-use crate::values::serialize_atom_identifier;
 use crate::values::AtomIdent;
+use crate::values::serialize_atom_identifier;
 use cssparser::{Parser, ToCss};
 use selectors::parser::PseudoElement as PseudoElementTrait;
-use static_prefs::pref;
 use std::fmt;
 use style_traits::ParseError;
 
@@ -521,19 +521,7 @@ impl PseudoElement {
         self.is_anon_box()
     }
 
-    /// Property flag that properties must have to apply to this pseudo-element.
     #[inline]
-    pub fn property_restriction(&self) -> Option<PropertyFlags> {
-        Some(match *self {
-            PseudoElement::FirstLetter => PropertyFlags::APPLIES_TO_FIRST_LETTER,
-            PseudoElement::FirstLine => PropertyFlags::APPLIES_TO_FIRST_LINE,
-            PseudoElement::Placeholder => PropertyFlags::APPLIES_TO_PLACEHOLDER,
-            PseudoElement::Cue => PropertyFlags::APPLIES_TO_CUE,
-            PseudoElement::Marker => PropertyFlags::APPLIES_TO_MARKER,
-            _ => return None,
-        })
-    }
-
     /// Whether this pseudo-element should actually exist if it has
     /// the given styles.
     pub fn should_exist(&self, style: &ComputedValues) -> bool {
@@ -556,7 +544,7 @@ impl PseudoElement {
     pub fn parse_ignore_enabled_state(input: &mut Parser) -> Result<Self, ParseError> {
         use crate::gecko::selector_parser;
         use cssparser::Token;
-        use selectors::parser::{is_css2_pseudo_element, SelectorParseErrorKind};
+        use selectors::parser::{SelectorParseErrorKind, is_css2_pseudo_element};
         use style_traits::StyleParseErrorKind;
 
         // The pseudo-element string should start with ':'.
@@ -566,10 +554,10 @@ impl PseudoElement {
         if !matches!(next, Token::Colon) {
             // Parse a CSS2 pseudo-element.
             let name = match next {
-                Token::Ident(name) if is_css2_pseudo_element(&name) => name,
+                Token::Ident(name) if is_css2_pseudo_element(name) => name,
                 _ => return Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError)),
             };
-            return PseudoElement::from_slice(&name).ok_or(ParseError::custom(
+            return PseudoElement::from_slice(name).ok_or(ParseError::custom(
                 SelectorParseErrorKind::UnsupportedPseudoClassOrElement,
             ));
         }
@@ -593,7 +581,7 @@ impl PseudoElement {
                     )
                 })
             },
-            _ => return Err(ParseError::unexpected_token()),
+            _ => Err(ParseError::unexpected_token()),
         }
     }
 

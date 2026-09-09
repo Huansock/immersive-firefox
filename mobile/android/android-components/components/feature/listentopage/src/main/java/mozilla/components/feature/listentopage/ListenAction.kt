@@ -25,6 +25,35 @@ sealed interface ListenAction : Action {
         data object StopRequested : Session
     }
 
+    /** Actions reporting the article the session reads out. */
+    sealed interface Content : ListenAction {
+        /**
+         * The article was extracted from the page.
+         *
+         * @property languageTag language of the article.
+         */
+        data class ContentReady(val languageTag: String) : Content
+
+        /** The page gave back no usable text. */
+        data object ContentUnavailable : Content
+    }
+
+    /** Actions reporting the change in selected voice. */
+    sealed interface Voices : ListenAction {
+        /**
+         * The voice was changed.
+         *
+         * @property voice The voice selected for the article.
+         */
+        data class VoiceSelected(val voice: Voice) : Voices
+
+        /** Available voices were loaded from the engine. */
+        data class AvailableVoicesLoaded(val voices: List<Voice>) : Voices
+
+        /** The engine has no installed, network-free voice for the article language. */
+        data object NoOfflineVoicesAvailable : Voices
+    }
+
     /** The error that needs to be cleared it is shown. */
     data object ErrorDismissed : ListenAction
 }

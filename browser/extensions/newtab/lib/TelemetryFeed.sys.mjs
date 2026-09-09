@@ -27,6 +27,12 @@ import { resolvePageLayoutVariant } from "resource://newtab/common/PageLayoutVar
 import { Prefs } from "resource://newtab/lib/ActivityStreamPrefs.sys.mjs";
 import { classifySite } from "resource://newtab/lib/SiteClassifier.sys.mjs";
 
+// Runtime import (not static) — karma's webpack cannot resolve resource://gre.
+// eslint-disable-next-line mozilla/use-static-import
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -48,6 +54,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
   MozAdsReportReason:
     "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustAdsClient.sys.mjs",
 });
+
+// @backward-compat { version 157 } card_column was added as an extra_key to
+// the pocket impression/click events in 157. A train-hopped XPI can run on
+// older platform builds whose schema lacks it, which would throw a Glean
+// error. Remove this guard, and its call sites, once 157 reaches Release.
+function isCardColumnSupported() {
+  return Services.vc.compare(AppConstants.MOZ_APP_VERSION, "157.0a1") >= 0;
+}
 
 export const PREF_IMPRESSION_ID = "impressionId";
 export const TELEMETRY_PREF = "telemetry";
@@ -1172,6 +1186,16 @@ export class TelemetryFeed {
   }
 
   /**
+   * @returns Flat list of all sections for the New Tab, each with its assigned layout.
+   */
+  getAllSections() {
+    const merinoData = this.store?.getState()?.DiscoveryStream?.feeds.data;
+    return Object.values(merinoData ?? {}).flatMap(
+      feed => feed?.data?.sections ?? []
+    );
+  }
+
+  /**
    * @returns Number of articles for the New Tab. Does not include spocs (ads)
    */
   getRecommendationCount() {
@@ -1240,7 +1264,7 @@ export class TelemetryFeed {
       corpus_item_id: randomItem.corpus_item_id,
     };
     // If we're replacing a non top stories item, then assign the appropriate
-    // section to the item
+    // section and layout to the item
     if (
       resultItem.section &&
       resultItem.section !== TOP_STORIES_SECTION_NAME &&
@@ -1248,6 +1272,9 @@ export class TelemetryFeed {
     ) {
       resultItem.section = randomItem.section;
       resultItem.section_position = randomItem.section_position;
+      resultItem.layout_name = this.getAllSections().find(
+        section => section.sectionKey === randomItem.section
+      )?.layout?.name;
     }
     return resultItem;
   }
@@ -1270,6 +1297,7 @@ export class TelemetryFeed {
       case "OPEN_NEW_WINDOW":
       case "CLICK": {
         const {
+          card_column,
           card_type,
           corpus_item_id,
           event_source,
@@ -1308,6 +1336,7 @@ export class TelemetryFeed {
             newtab_visit_id: session.session_id,
             is_sponsored,
             ...(format ? { format } : {}),
+            ...(card_column && isCardColumnSupported() ? { card_column } : {}),
             ...(section
               ? {
                   section,
@@ -1784,6 +1813,9 @@ export class TelemetryFeed {
       // Intentional fall-through
       case at.INLINE_SELECTION_IMPRESSION:
         this.handleInlineSelectionUserEvent(action);
+        break;
+      case at.TOPIC_NAVIGATION_CLICK:
+        this.handleTopicNavigationUserEvent(action);
         break;
       case at.REPORT_AD_SUBMIT:
         this.handleReportAdUserEvent(action);
@@ -2323,6 +2355,20 @@ export class TelemetryFeed {
     }
   }
 
+  handleTopicNavigationUserEvent(action) {
+    const session = this.sessions.get(au.getPortIdOfSender(action));
+    if (!session) {
+      return;
+    }
+
+    const { topic, event_source } = action.data;
+    Glean.newtab.topicNavigationClick.record({
+      newtab_visit_id: session.session_id,
+      topic,
+      event_source,
+    });
+  }
+
   handleTopicSelectionUserEvent(action) {
     const session = this.sessions.get(au.getPortIdOfSender(action));
     if (session) {
@@ -2604,6 +2650,9 @@ export class TelemetryFeed {
       const gleanData = {
         is_sponsored,
         ...(tile.format ? { format: tile.format } : {}),
+        ...(tile.card_column && isCardColumnSupported()
+          ? { card_column: tile.card_column }
+          : {}),
         ...(tile.section
           ? {
               section: tile.section,

@@ -20,6 +20,7 @@ const toolsNameMap = {
   viewBookmarksSidebar: "bookmarks",
   viewOpenTabsSidebar: "opentabs",
   viewCPMSidebar: "passwords",
+  viewResourceMonitorSidebar: "resourcemonitor",
 };
 const EXPAND_ON_HOVER_DEBOUNCE_TIMEOUT_MS = 1000;
 const LAUNCHER_SPLITTER_WIDTH = 4;
@@ -148,7 +149,7 @@ var SidebarController = {
           elementId: "sidebar-switcher-tabs",
           url: this.sidebarRevampEnabled
             ? "chrome://browser/content/sidebar/sidebar-syncedtabs.html"
-            : "chrome://browser/content/syncedtabs/sidebar.xhtml",
+            : "chrome://browser/content/syncedtabs/sidebar.html",
           menuId: "menu_tabsSidebar",
           classAttribute: "sync-ui-item",
           menuL10nId: "menu-view-synced-tabs-sidebar",
@@ -233,6 +234,20 @@ var SidebarController = {
         gleanEvent: Glean.contextualManager.sidebarToggle,
         gleanClickEvent: Glean.sidebar.passwordsIconClick,
         recordSidebarVersion: true,
+      }
+    );
+
+    this.registerPrefSidebar(
+      "browser.resourceMonitor.enabled",
+      "viewResourceMonitorSidebar",
+      {
+        name: "resourcemonitor",
+        elementId: "sidebar-switcher-resourcemonitor",
+        url: "about:processes?groupby=tab",
+        menuId: "menu_resourceMonitorSidebar",
+        menuL10nId: "menu-view-resource-monitor",
+        revampL10nId: "sidebar-menu-resource-monitor-label",
+        iconUrl: "chrome://browser/skin/lightning-bolt.svg",
       }
     );
 
@@ -2785,22 +2800,7 @@ var SidebarController = {
       document.removeEventListener("popuphidden", this);
       window.removeEventListener("uidensitychanged", this);
       this._launcherCollapsedWidthStale = false;
-      // Add back user-preferred height if defined
-      if (
-        this._state.launcherExpanded &&
-        this._state.expandedToolsHeight !== undefined &&
-        this.sidebarMain.buttonGroup
-      ) {
-        this.sidebarMain.buttonGroup.style.height =
-          this._state.expandedToolsHeight;
-      } else if (
-        !this._state.launcherExpanded &&
-        this._state.collapsedToolsHeight !== undefined &&
-        this.sidebarMain.buttonGroup
-      ) {
-        this.sidebarMain.buttonGroup.style.height =
-          this._state.collapsedToolsHeight;
-      }
+      this._state.updateToolsHeight();
     }
 
     document.documentElement.toggleAttribute(

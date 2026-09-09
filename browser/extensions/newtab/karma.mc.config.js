@@ -211,6 +211,26 @@ module.exports = function (config) {
                 functions: 0,
                 branches: 0,
               },
+            /**
+             * TopicNavigation.jsx is tested via Jest (see test/jest/content-src/components/DiscoveryStreamComponents/TopicNavigation.test.jsx).
+             */
+            "content-src/components/DiscoveryStreamComponents/TopicNavigation/TopicNavigation.jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
+              },
+            /**
+             * useOverflowSplit.jsx is tested via Jest (see test/jest/content-src/components/DiscoveryStreamComponents/useOverflowSplit.test.jsx).
+             */
+            "content-src/components/DiscoveryStreamComponents/TopicNavigation/useOverflowSplit.jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
+              },
             "lib/AboutPreferences.sys.mjs": {
               statements: 98,
               lines: 98,
@@ -781,12 +801,6 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
-            "content-src/components/Widgets/useMouseDnD.jsx": {
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
             // Covered by test/jest/content-src/components/Widgets/useCountUp.test.jsx
             "content-src/components/Widgets/useCountUp.jsx": {
               statements: 0,
@@ -845,6 +859,12 @@ module.exports = function (config) {
             },
             // Coverage for this module lives in Jest (test/jest/content-src/lib/panel-list-utils.test.jsx)
             "content-src/lib/panel-list-utils.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            "content-src/lib/usePointerReorder.jsx": {
               statements: 0,
               lines: 0,
               functions: 0,
@@ -924,13 +944,6 @@ module.exports = function (config) {
             __dirname,
             "../../../toolkit/content/vendor/react/react-redux.js"
           )
-        ),
-        // AppConstants is imported eagerly in AboutPreferences.sys.mjs, but
-        // karma's webpack bundler can't resolve resource:// URIs.
-        // Redirect to a test stub.
-        new webpack.NormalModuleReplacementPlugin(
-          /^resource:\/\/gre\/modules\/AppConstants\.sys\.mjs$/,
-          path.resolve(__dirname, "test/unit/stubs/AppConstants.sys.mjs")
         ),
       ],
       externals: [

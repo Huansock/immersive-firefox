@@ -3255,8 +3255,24 @@ const EmbeddedMigrationWizard = ({
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-const EmbeddedThemePicker = () => {
-  return /*#__PURE__*/external_React_default().createElement("theme-picker", null);
+const EmbeddedThemePicker = ({
+  installSource
+}) => {
+  const themePickerRef = (0,external_React_namespaceObject.useRef)(null);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (installSource !== "about:welcome") {
+      return;
+    }
+    // The widget may not be upgraded from a plain element yet when this
+    // mounts, so wait for its class definition before calling `shown()`.
+    customElements.whenDefined("theme-picker").then(() => {
+      themePickerRef.current?.shown();
+    });
+  }, [installSource]);
+  return /*#__PURE__*/external_React_default().createElement("theme-picker", {
+    ref: themePickerRef,
+    installsource: installSource
+  });
 };
 ;// ./content-src/components/EmbeddedFxBackupOptIn.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -3854,6 +3870,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 
 
 
+
 const HEADER_STYLES = ["backgroundColor", "border", "padding", "margin", "width", "height"];
 const ContentTiles_TILE_STYLES = ["border", "borderRadius", "marginBlock", "marginInline", "paddingBlock", "paddingInline"];
 const CONTAINER_STYLES = ["padding", "margin", "marginBlock", "marginInline", "paddingBlock", "paddingInline", "flexDirection", "flexWrap", "flexFlow", "flexGrow", "flexShrink", "justifyContent", "alignItems", "gap"];
@@ -4025,7 +4042,7 @@ const ContentTiles = props => {
       className: `content-tile ${header ? "has-header" : ""}`,
       style: MultiStageUtils.getTileStyle(tile, ContentTiles_TILE_STYLES)
     }, header?.title && /*#__PURE__*/external_React_default().createElement("button", _extends({
-      className: "tile-header secondary",
+      className: `tile-header secondary${header.linkStyle ? " link-style" : ""}`,
       onClick: () => toggleTile(index, tile)
     }, tileHeaderProps, {
       style: MultiStageUtils.getValidStyle(header.style, HEADER_STYLES)
@@ -4098,7 +4115,8 @@ const ContentTiles = props => {
         tiles: tile
       }
     }), tile.type === "theme-picker" && /*#__PURE__*/external_React_default().createElement(EmbeddedThemePicker, {
-      handleAction: props.handleAction
+      handleAction: props.handleAction,
+      installSource: tile.data?.installSource
     }), tile.type === "action_checklist" && tile.data && /*#__PURE__*/external_React_default().createElement(ActionChecklist, {
       content: content,
       message_id: props.messageId,
@@ -4141,6 +4159,9 @@ const ContentTiles = props => {
         tiles: tile
       },
       contentToggled: props.contentToggleChecked
+    }), tile.type === "text" && tile.text && /*#__PURE__*/external_React_default().createElement(LinkParagraph, {
+      text_content: tile,
+      handleAction: props.handleAction
     })) : null);
   };
   const renderContentTiles = () => {

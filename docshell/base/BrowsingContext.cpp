@@ -5,6 +5,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 
 #include "ipc/IPCMessageUtils.h"
+#include "mozilla/GfxMessageUtils.h"
 
 #ifdef ACCESSIBILITY
 #  include "mozilla/a11y/DocAccessibleParent.h"
@@ -1655,8 +1656,7 @@ bool BrowsingContext::CrossOriginIsolated() {
              nsILoadInfo::
                  OPENER_POLICY_SAME_ORIGIN_EMBEDDER_POLICY_REQUIRE_CORP &&
          XRE_IsContentProcess() &&
-         StringBeginsWith(ContentChild::GetSingleton()->GetRemoteType(),
-                          WITH_COOP_COEP_REMOTE_TYPE_PREFIX);
+         ContentChild::GetSingleton()->GetRemoteType().IsWebCoopCoep();
 }
 
 void BrowsingContext::SetTriggeringAndInheritPrincipals(
@@ -2348,6 +2348,20 @@ nsresult BrowsingContext::LoadURI(nsDocShellLoadState* aLoadState,
     }
   } else if (XRE_IsParentProcess()) {
     if (ContentParent* cp = Canonical()->GetContentParent()) {
+      // nsDocShell::LoadURI does this too, but for a process switching load
+      // the entry this load adds can be committed before its notification
+      // arrives, and the flag would land on that entry instead. This has to
+      // stay above SendLoadURI: PContent is FIFO, so the content process then
+      // sees the field already set and skips its own notification.
+      if (!aLoadState->LoadIsFromSessionHistory() &&
+          aLoadState->TriggeringPrincipal() &&
+          aLoadState->TriggeringPrincipal()->IsSystemPrincipal()) {
+        WindowContext* topWc = GetTopWindowContext();
+        if (topWc && !topWc->IsDiscarded()) {
+          MOZ_ALWAYS_SUCCEEDS(topWc->SetSHEntryHasUserInteraction(true));
+        }
+      }
+
       // Attempt to initiate this load immediately in the parent, if it
       // succeeds, aLoadState will have a reference to the pending
       // DocumentLoadListener, which will be recovered when the DocumentChannel
@@ -3474,6 +3488,14 @@ void BrowsingContext::DidSet(FieldIndex<IDX_TouchEventsOverrideInternal>,
 void BrowsingContext::DidSet(FieldIndex<IDX_EmbedderColorSchemes>,
                              EmbedderColorSchemes&& aOldValue) {
   if (GetEmbedderColorSchemes() == aOldValue) {
+    return;
+  }
+  PresContextAffectingFieldChanged();
+}
+
+void BrowsingContext::DidSet(FieldIndex<IDX_EmbedderScrollbarInset>,
+                             LayoutDeviceIntMargin&& aOldValue) {
+  if (GetEmbedderScrollbarInset() == aOldValue) {
     return;
   }
   PresContextAffectingFieldChanged();

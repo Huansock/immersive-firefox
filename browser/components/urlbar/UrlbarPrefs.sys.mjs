@@ -786,6 +786,7 @@ const PREF_OTHER_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   ["browser.smartwindow.smartbarMentions.loglevel", "Error"],
   ["keyword.enabled", true],
   ["privacy.query_stripping.strip_on_share.enabled", true],
+  ["privacy.userContext.enabled", true],
   ["security.insecure_connection_text.enabled", true],
   [TelemetryReportingPolicy.TOU_ACCEPTED_DATE_PREF, 0],
   ["ui.popup.disable_autohide", false],
@@ -1397,6 +1398,9 @@ class Preferences {
 
     // Some prefs may influence others.
     switch (pref) {
+      case "browser.nova.enabled":
+        this._map.delete("newtabFeatureGate");
+        return;
       case "autoFill.adaptiveHistory.useCountThreshold":
         this._map.delete("autoFillAdaptiveHistoryUseCountThreshold");
         return;
@@ -1495,6 +1499,10 @@ class Preferences {
     switch (pref) {
       case "shortcuts.actions": {
         return this.get("scotchBonnet.enableOverride") && this._readPref(pref);
+      }
+      case "newtabFeatureGate": {
+        // The New Tab search bar is only themed for Nova.
+        return this.get("browser.nova.enabled") && this._readPref(pref);
       }
       case "defaultBehavior": {
         let val = 0;

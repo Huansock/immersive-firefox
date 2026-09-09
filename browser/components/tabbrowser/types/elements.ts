@@ -48,6 +48,7 @@ interface MozTabbrowserTab extends XULElement {
   _fullyOpen: boolean;
   _fullLabel: string;
   _labelIsContentTitle: boolean;
+  _labelIsInitialTitle: boolean;
   _pinnedUnscrollable: boolean;
   _pendingPermitUnload: boolean;
   _closedInMultiselection: boolean;
@@ -76,6 +77,12 @@ type TabGroupColor =
   | "red";
 
 interface MozTabbrowserTabGroup extends XULElement {
+  // Constant: a group is neither pinned, nor in a split view, nor inside
+  // another group.
+  pinned: false;
+  splitview: null;
+  group: null;
+
   tabs: MozTabbrowserTab[];
   tabsAndSplitViews: (MozTabbrowserTab | MozTabSplitViewWrapper)[];
   label: string;
@@ -92,16 +99,29 @@ interface MozTabbrowserTabGroup extends XULElement {
 }
 
 interface MozTabbrowserTabGroupLabel extends XULElement {
+  // Constant, as on the tab group the label stands in for. The label is a plain
+  // element with no class of its own, so tabgroup.js assigns all four.
+  pinned: false;
+  splitview: null;
+
   container: any;
   group: MozTabbrowserTabGroup;
 }
 
+// What a split view contributes to session state, as its `state` getter builds
+// it and sessionstore stores it. tabsplitview.js documents the same shape in a
+// JSDoc typedef nothing can import.
+type TabSplitViewStateData = { id: number; numberOfTabs: number };
+
 interface MozTabSplitViewWrapper extends XULElement {
+  // Constant: a split view is not itself in one.
+  splitview: null;
+
   tabs: MozTabbrowserTab[];
   splitViewId: number;
-  state: { id: number; numberOfTabs: number };
+  state: TabSplitViewStateData;
   group: MozTabbrowserTabGroup | null;
-  pinned: boolean;
+  pinned: false;
   visible: boolean;
   multiselected: boolean;
   hasActiveTab: boolean;

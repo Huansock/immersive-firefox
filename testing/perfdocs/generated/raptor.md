@@ -361,6 +361,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
 * **expected**: pass
 * **expose browser profiler**: true
 * **expose chrome trace**: true
+* **fetch path**: pgo-extended-corpus/JetStream
 * **gecko profile interval**: 1
 * **link searchfox**: {searchfox}`testing/raptor/raptor/tests/benchmarks/jetstream3-desktop.toml#17`
 * **lower is better**: false
@@ -676,6 +677,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
 * **apps**: chrome-m, cstm-car-m, fenix
 * **expected**: pass
 * **expose browser profiler**: true
+* **fetch path**: pgo-extended-corpus/JetStream
 * **gecko profile interval**: 1
 * **link searchfox**: {searchfox}`testing/raptor/raptor/tests/benchmarks/jetstream3-mobile.toml#22`
 * **lower is better**: false
@@ -1448,6 +1450,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
 * **expected**: pass
 * **expose browser profiler**: true
 * **expose chrome trace**: true
+* **fetch path**: motionmark
 * **gecko profile features**: stackwalk,js,java,processcpu,memory
 * **gecko profile interval**: 1
 * **gecko profile threads**: GeckoMain,Compositor,Renderer,SwComposite,RenderBackend,SceneBuilder,WrWorker,CanvasWorkers,TextureUpdate
@@ -1782,6 +1785,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
 * **cold**: true
 * **expected**: pass
 * **expose browser profiler**: true
+* **fetch path**: motionmark
 * **gecko profile features**: stackwalk,js,java,processcpu,memory
 * **gecko profile interval**: 1
 * **gecko profile threads**: GeckoMain,Compositor,Renderer,SwComposite,RenderBackend,SceneBuilder,WrWorker,CanvasWorkers,TextureUpdate
@@ -2130,11 +2134,12 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
 * **expected**: pass
 * **expose browser profiler**: true
 * **expose chrome trace**: true
+* **fetch path**: motionmark
 * **gecko profile features**: stackwalk,js,java,processcpu,memory
 * **gecko profile interval**: 1
 * **gecko profile threads**: GeckoMain,Compositor,Renderer,SwComposite,RenderBackend,SceneBuilder,WrWorker,CanvasWorkers,TextureUpdate
 * **host from parent**: false
-* **link searchfox**: {searchfox}`testing/raptor/raptor/tests/benchmarks/motionmark-1-3-desktop.toml#29`
+* **link searchfox**: {searchfox}`testing/raptor/raptor/tests/benchmarks/motionmark-1-3-desktop.toml#32`
 * **lower is better**: false
 * **page cycles**: 1
 * **page timeout**: 600000
@@ -2464,11 +2469,12 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
 * **cold**: true
 * **expected**: pass
 * **expose browser profiler**: true
+* **fetch path**: motionmark
 * **gecko profile features**: stackwalk,js,java,processcpu,memory
 * **gecko profile interval**: 1
 * **gecko profile threads**: GeckoMain,Compositor,Renderer,SwComposite,RenderBackend,SceneBuilder,WrWorker,CanvasWorkers,TextureUpdate
 * **host from parent**: false
-* **link searchfox**: {searchfox}`testing/raptor/raptor/tests/benchmarks/motionmark-1-3-mobile.toml#28`
+* **link searchfox**: {searchfox}`testing/raptor/raptor/tests/benchmarks/motionmark-1-3-mobile.toml#31`
 * **lower is better**: false
 * **page cycles**: 1
 * **page timeout**: 600000
@@ -2814,6 +2820,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
 * **cold**: true
 * **expected**: pass
 * **expose browser profiler**: true
+* **fetch path**: Speedometer
 * **gather cpuTime**: true
 * **gecko profile features**: stackwalk,js,processcpu,nomarkerstacks
 * **gecko profile interval**: 1
@@ -6337,6 +6344,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
 * **repository**: https://github.com/mozilla/perf-automation
 * **repository path**: benchmarks/unity-webgl
 * **repository revision**: 61332db584026b73e37066d717a162825408c36b
+* **sparse checkout**: true
 * **subtest lower is better**: false
 * **subtest unit**: score
 * **test url**: <http://\<host\>:\<port\>/index.html?raptor>
@@ -48711,32 +48719,32 @@ A composite benchmark that measures page loading and sub-navigation performance 
 
 **Owner**: PerfTest Team
 
-**Description**: Runs the nav-bench composite across Amazon, BBC, DuckDuckGo, Reddit, and Wikipedia in a single combined session.
+**Description**: Runs the nav-bench composite across Amazon, BBC, DuckDuckGo, Facebook, Google, Google Docs, Reddit, Wikipedia, and Yahoo in a single combined session.
 
 
 * **accept zero vismet**: false
 * **alert on**: [SpeedIndex](raptor-metrics.md#speed-index)
 * **alert threshold**: 5.0
 * **apps**: firefox, chrome
-* **browser cycles**: 10
+* **browser cycles**: 5
 * **browsertime visualmetrics**: true
 * **cold**: true
 * **custom data**: true
 * **expected**: pass
 * **gecko profile interval**: 1
 * **interactive**: true
-* **link searchfox**: {searchfox}`testing/raptor/raptor/tests/nav-bench/browsertime-nav-bench.toml#55`
+* **link searchfox**: {searchfox}`testing/raptor/raptor/tests/nav-bench/browsertime-nav-bench.toml#59`
 * **lower is better**: false
 * **measure**: SpeedIndex
 * **page cycles**: 1
 * **page timeout**: 600000
 * **playback**: mitmproxy
 * **playback manifests dir**: nav-bench
-* **playback pageset manifest**: mitm12-darwin-firefox-amazon-nav.manifest,mitm12-darwin-firefox-bbc-nav.manifest,mitm12-darwin-firefox-duckduckgo-nav.manifest,mitm12-darwin-firefox-reddit-nav.manifest,mitm12-darwin-firefox-wikipedia-nav.manifest
+* **playback pageset manifest**: mitm12-darwin-firefox-amazon-nav.manifest,mitm12-darwin-firefox-bbc-nav.manifest,mitm12-darwin-firefox-duckduckgo-nav.manifest,mitm12-darwin-firefox-facebook-nav.manifest,mitm12-darwin-firefox-google-docs-nav.manifest,mitm12-darwin-firefox-google-nav.manifest,mitm12-darwin-firefox-reddit-nav.manifest,mitm12-darwin-firefox-wikipedia-nav.manifest,mitm12-darwin-firefox-yahoo-nav.manifest
 * **playback version**: 12.2.1
 * **preferences**: fission.bfcacheInParent=false browser.sessionhistory.max_total_viewers=0 network.http.http3.enable=false network.http.altsvc.enabled=false network.dns.forceResolve=192.0.2.1
 * **support class**: nav_bench.py
-* **test cmds**: ['wait.byTime', '30000'] ['measure.start', 'amazon-nav-load'] ['navigate', 'https://www.amazon.ca/s?k=laptop&ref=nb_sb_noss_1'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'bbc-nav-load'] ['navigate', 'https://www.bbc.com/news/'] ['wait.byTime', '2000'] ['measure.stop', ''] ['measure.start', 'bbc-nav-subnav'] ['click.bySelectorAndWait', 'a[href*="bbcindepth"]'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'duckduckgo-nav-load'] ['navigate', 'https://duckduckgo.com/?q=mandelbrot+set'] ['wait.byTime', '2000'] ['measure.stop', ''] ['measure.start', 'duckduckgo-nav-subnav'] ['click.bySelectorAndWait', 'nav ul li:nth-of-type(2) > a'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'reddit-nav-load'] ['navigate', 'https://www.reddit.com/r/IAmA/comments/m8n4vt/im_bill_gates_cochair_of_the_bill_and_melinda/'] ['wait.byTime', '3000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'wikipedia-nav-load'] ['navigate', 'https://en.wikipedia.org/wiki/Barack_Obama'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000']
+* **test cmds**: ['wait.byTime', '30000'] ['measure.start', 'google-nav-load'] ['navigate', 'https://www.google.com/'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'facebook-nav-load'] ['navigate', 'https://www.facebook.com/Cristiano'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'yahoo-nav-load'] ['navigate', 'https://ca.yahoo.com/'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'amazon-nav-load'] ['navigate', 'https://www.amazon.ca/s?k=laptop&ref=nb_sb_noss_1'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'bbc-nav-load'] ['navigate', 'https://www.bbc.com/news/'] ['wait.byTime', '2000'] ['measure.stop', ''] ['measure.start', 'bbc-nav-subnav'] ['click.bySelectorAndWait', 'a[href*="bbcindepth"]'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'duckduckgo-nav-load'] ['navigate', 'https://duckduckgo.com/?q=mandelbrot+set'] ['wait.byTime', '2000'] ['measure.stop', ''] ['measure.start', 'duckduckgo-nav-subnav'] ['click.bySelectorAndWait', 'nav ul li:nth-of-type(2) > a'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'reddit-nav-load'] ['navigate', 'https://www.reddit.com/r/IAmA/comments/m8n4vt/im_bill_gates_cochair_of_the_bill_and_melinda/'] ['wait.byTime', '3000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'google-docs-nav-load'] ['navigate', 'https://docs.google.com/document/d/1US-07msg12slQtI_xchzYxcKlTs6Fp7WqIc6W5GK5M8/edit?usp=sharing'] ['wait.byTime', '3000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'wikipedia-nav-load'] ['navigate', 'https://en.wikipedia.org/wiki/Barack_Obama'] ['wait.byTime', '2000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000'] ['measure.start', 'google-docs-nav-warm'] ['navigate', 'https://docs.google.com/document/d/1US-07msg12slQtI_xchzYxcKlTs6Fp7WqIc6W5GK5M8/edit?usp=sharing'] ['wait.byTime', '3000'] ['measure.stop', ''] ['navigate', 'about:blank'] ['wait.byTime', '1000']
 * **test url**: <about:blank>
 * **type**: pageload
 * **unit**: score

@@ -276,6 +276,16 @@ export class UrlbarQueryContext {
   }
 
   /**
+   * Whether a string that is a URL may be navigated to.
+   *
+   * @see {UrlbarShared.navigationEnabled}
+   * @type {boolean}
+   */
+  get navigationEnabled() {
+    return UrlbarShared.navigationEnabled(this.sapName);
+  }
+
+  /**
    * @type {UrlbarSearchModeData}
    *   Details about the search mode associated with this context.
    */
@@ -466,7 +476,7 @@ export class UrlbarQueryContext {
    */
   static fromWire(wire) {
     Object.setPrototypeOf(wire, UrlbarQueryContext.prototype);
-    wire.results = wire.results?.map(UrlbarResult.fromWire) ?? [];
+    wire.results = wire.results?.map(r => UrlbarResult.fromWire(r)) ?? [];
     if (wire.heuristicResult) {
       wire.heuristicResult = UrlbarResult.fromWire(wire.heuristicResult);
     }

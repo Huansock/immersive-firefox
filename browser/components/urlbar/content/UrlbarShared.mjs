@@ -140,6 +140,25 @@ export const UrlbarShared = {
     PROVIDER_ENGAGEMENT: "onProviderEngagement",
   }),
 
+  /**
+   * The UrlbarChildController/UrlbarInput/UrlbarView methods the parent may
+   * invoke over the `UrlbarChild` actor as an `InvokeContentAction` message.
+   *
+   * The parameters of these functions MUST be structured-clonable.
+   */
+  INVOKABLE_CONTENT_ACTIONS: Object.freeze({
+    controller: /** @type {const} */ (["notifyFromWire", "updateEngineStore"]),
+    input: /** @type {const} */ (["search", "setValue", "startQuery"]),
+    view: /** @type {const} */ ([
+      "acknowledgeFeedback",
+      "clearL10nCache",
+      "clearTopSitesCache",
+      "close",
+      "startTail150",
+      "updateResultMenuCommands",
+    ]),
+  }),
+
   TOKEN_TYPE: Object.freeze({
     TEXT: 1,
     // `looksLikeOrigin()` returned a value for this token that was neither
@@ -675,6 +694,19 @@ export const UrlbarShared = {
    */
   keywordEnabled(sapName) {
     return this.isSearchbarSAP(sapName) || UrlbarPrefs.get("keyword.enabled");
+  },
+
+  /**
+   * Whether a string that is a URL may be navigated to. The toolbar search bar
+   * only searches; the address bar and New Tab's bar both navigate.
+   *
+   * @param {string} sapName
+   *   The SAP name to check.
+   * @returns {boolean}
+   *   Whether navigation is enabled.
+   */
+  navigationEnabled(sapName) {
+    return sapName != "searchbar";
   },
 
   /**

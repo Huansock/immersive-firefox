@@ -697,17 +697,19 @@ class AdjustedTarget {
                           const gfx::Rect* aBounds = nullptr,
                           bool aAllowOptimization = false)
       : mCtx(aCtx), mUsedOperation(aCtx->CurrentState().op) {
-    // All rects in this function are in the device space of ctx->mTarget.
+    const bool needShadow = aCtx->NeedToDrawShadow();
+    const bool needFilter = aCtx->NeedToApplyFilter();
 
+    // All rects in this function are in the device space of ctx->mTarget.
     // In order to keep our temporary surfaces as small as possible, we first
     // calculate what their maximum required bounds would need to be if we
     // were to fill the whole canvas. Everything outside those bounds we don't
     // need to render.
     gfx::Rect r(0, 0, aCtx->mWidth, aCtx->mHeight);
     gfx::Rect maxSourceNeededBoundsForShadow =
-        MaxSourceNeededBoundsForShadow(r, aCtx);
-    gfx::Rect maxSourceNeededBoundsForFilter =
-        MaxSourceNeededBoundsForFilter(maxSourceNeededBoundsForShadow, aCtx);
+        MaxSourceNeededBoundsForShadow(r, aCtx, needShadow);
+    gfx::Rect maxSourceNeededBoundsForFilter = MaxSourceNeededBoundsForFilter(
+        maxSourceNeededBoundsForShadow, aCtx, needFilter);
     if (!aCtx->IsTargetValid()) {
       return;
     }
@@ -716,7 +718,7 @@ class AdjustedTarget {
     if (aBounds) {
       bounds = bounds.Intersect(*aBounds);
     }
-    gfx::Rect boundsAfterFilter = BoundsAfterFilter(bounds, aCtx);
+    gfx::Rect boundsAfterFilter = BoundsAfterFilter(bounds, aCtx, needFilter);
     if (!aCtx->IsTargetValid() || !boundsAfterFilter.IsFinite()) {
       return;
     }
@@ -726,9 +728,8 @@ class AdjustedTarget {
     // First set up the shadow draw target, because the shadow goes outside.
     // It applies to the post-filter results, if both a filter and a shadow
     // are used.
-    const bool applyFilter = aCtx->NeedToApplyFilter();
-    if (aCtx->NeedToDrawShadow()) {
-      if (aAllowOptimization && !applyFilter) {
+    if (needShadow) {
+      if (aAllowOptimization && !needFilter) {
         // If only drawing a shadow and no filter, then avoid buffering to an
         // intermediate target while drawing the shadow directly to the final
         // target. When doing so, we want to use the actual composition op
@@ -753,7 +754,7 @@ class AdjustedTarget {
     if (!aCtx->IsTargetValid()) {
       return;
     }
-    if (applyFilter) {
+    if (needFilter) {
       bounds.RoundOut();
 
       if (!mTarget) {
@@ -904,12 +905,12 @@ class AdjustedTarget {
 
  private:
   gfx::Rect MaxSourceNeededBoundsForFilter(const gfx::Rect& aDestBounds,
-                                           CanvasRenderingContext2D* aCtx) {
-    const bool applyFilter = aCtx->NeedToApplyFilter();
+                                           CanvasRenderingContext2D* aCtx,
+                                           bool aNeedFilter) {
     if (!aCtx->IsTargetValid()) {
       return aDestBounds;
     }
-    if (!applyFilter) {
+    if (!aNeedFilter) {
       return aDestBounds;
     }
 
@@ -926,8 +927,9 @@ class AdjustedTarget {
   }
 
   gfx::Rect MaxSourceNeededBoundsForShadow(const gfx::Rect& aDestBounds,
-                                           CanvasRenderingContext2D* aCtx) {
-    if (!aCtx->NeedToDrawShadow()) {
+                                           CanvasRenderingContext2D* aCtx,
+                                           bool aNeedShadow) {
+    if (!aNeedShadow) {
       return aDestBounds;
     }
 
@@ -941,12 +943,12 @@ class AdjustedTarget {
   }
 
   gfx::Rect BoundsAfterFilter(const gfx::Rect& aBounds,
-                              CanvasRenderingContext2D* aCtx) {
-    const bool applyFilter = aCtx->NeedToApplyFilter();
+                              CanvasRenderingContext2D* aCtx,
+                              bool aNeedFilter) {
     if (!aCtx->IsTargetValid()) {
       return aBounds;
     }
-    if (!applyFilter) {
+    if (!aNeedFilter) {
       return aBounds;
     }
 
@@ -1304,8 +1306,8 @@ CanvasRenderingContext2D::ParseColorSlow(const nsACString& aString) {
   const StylePerDocumentStyleData* data = set ? set->RawData() : nullptr;
   bool wasCurrentColor = false;
   nscolor color;
-  if (ServoCSSParser::ComputeColor(data, NS_RGB(0, 0, 0), aString, &color,
-                                   &wasCurrentColor, loader)) {
+  if (ServoCSSParser::ComputeColor(data, aString, &color, &wasCurrentColor,
+                                   loader)) {
     result.mWasCurrentColor = wasCurrentColor;
     result.mColor.emplace(color);
   }
@@ -2978,6 +2980,9 @@ void CanvasRenderingContext2D::SetFilter(const nsACString& aFilter,
     CurrentState().filterString = aFilter;
     CurrentState().filterChain = std::move(filterChain);
     if (mCanvasElement) {
+      if (CurrentState().autoSVGFiltersObserver) {
+        CurrentState().autoSVGFiltersObserver->Detach();
+      }
       CurrentState().autoSVGFiltersObserver =
           SVGObserverUtils::ObserveFiltersForCanvasContext(
               this, mCanvasElement, CurrentState().filterChain.AsSpan());
@@ -3630,6 +3635,34 @@ void CanvasRenderingContext2D::StrokeImpl(const gfx::Path& aPath) {
 
 void CanvasRenderingContext2D::Stroke() {
   mFeatureUsage |= CanvasFeatureUsage::Stroke;
+
+  if (mPathBuilder && !mPath && !mPathPruned && !mPathTransformDirty &&
+      IsTargetValid()) {
+    Maybe<Path::Circle> circle = mPathBuilder->AsCircle();
+    Maybe<Path::Line> line = circle ? Nothing() : mPathBuilder->AsLine();
+    if ((circle && circle->closed) || line) {
+      if (!NeedToCalculateBounds()) {
+        const ContextState& state = CurrentState();
+        StrokeOptions strokeOptions(
+            state.lineWidth, CanvasToGfx(state.lineJoin),
+            CanvasToGfx(state.lineCap), state.miterLimit, state.dash.Length(),
+            state.dash.Elements(), state.dashOffset);
+        if (circle) {
+          mTarget->StrokeCircle(
+              circle->origin, circle->radius,
+              CanvasGeneralPattern().ForStyle(this, Style::STROKE, mTarget),
+              strokeOptions, DrawOptions(state.globalAlpha, state.op));
+        } else {
+          mTarget->StrokeLine(
+              line->origin, line->destination,
+              CanvasGeneralPattern().ForStyle(this, Style::STROKE, mTarget),
+              strokeOptions, DrawOptions(state.globalAlpha, state.op));
+        }
+        Redraw();
+        return;
+      }
+    }
+  }
 
   EnsureTargetAndUserSpacePath();
   if (!IsTargetValid()) {
@@ -5850,39 +5883,20 @@ bool ValidSurfaceDescriptorForRemoteCanvas2d(
     return false;
   }
   const auto& sdrd = sdv.get_SurfaceDescriptorRemoteDecoder();
-  const auto& subdesc = sdrd.subdesc();
-  switch (subdesc.type()) {
-    case layers::RemoteDecoderVideoSubDescriptor::Tnull_t:
+  switch (sdrd.videoType()) {
+    case layers::RemoteDecoderVideoType::Buffer:
       break;
 #ifdef XP_MACOSX
-    case layers::RemoteDecoderVideoSubDescriptor::
-        TSurfaceDescriptorMacIOSurface: {
-      const auto& ssd = subdesc.get_SurfaceDescriptorMacIOSurface();
-      if (ssd.gpuFence()) {
-        return false;
-      }
+    case layers::RemoteDecoderVideoType::MacIOSurface: {
       break;
     }
 #endif
 #ifdef XP_WIN
-    case layers::RemoteDecoderVideoSubDescriptor::TSurfaceDescriptorD3D10: {
+    case layers::RemoteDecoderVideoType::D3D10: {
       if (!StaticPrefs::gfx_canvas_remote_use_draw_image_fast_path_d3d()) {
         return false;
       }
-      const auto& ssd = subdesc.get_SurfaceDescriptorD3D10();
-      if (aResultSd) {
-        *aResultSd = Some(aSd);
-        // Not IPC-able, but it's just an optimization to have this.
-        aResultSd->ref()
-            .get_SurfaceDescriptorGPUVideo()
-            .get_SurfaceDescriptorRemoteDecoder()
-            .subdesc()
-            .get_SurfaceDescriptorD3D10()
-            .handle() = nullptr;
-      } else if (ssd.handle()) {
-        return false;
-      }
-      return true;
+      break;
     }
 #endif
     default:

@@ -212,7 +212,7 @@ pub struct PrimitiveDrawHeader {
 
     /// Local-space rect of the primitive after device-pixel snapping has
     /// been applied. Populated for every prim each frame by the visibility
-    /// pass (snapping `PrimitiveInstance.unsnapped_pattern_rect` against the
+    /// pass (snapping `PrimTemplateCommonData.prim_rect` against the
     /// surface raster node) before any visibility / prepare consumer reads it.
     pub snapped_pattern_rect: LayoutRect,
 }
@@ -247,7 +247,6 @@ impl PrimitiveDrawHeader {
 pub fn update_prim_visibility(
     pic_index: PictureIndex,
     parent_surface_index: Option<SurfaceIndex>,
-    root_culling_rect: &DeviceRect,
     store: &PrimitiveStore,
     is_root_tile_cache: bool,
     frame_context: &FrameVisibilityContext,
@@ -271,14 +270,15 @@ pub fn update_prim_visibility(
             );
 
             if let Some(parent_surface_index) = parent_surface_index {
-                let parent_culling_rect = frame_state
-                    .surfaces[parent_surface_index.0]
-                    .culling_rect;
+                let parent_surface = &frame_state.surfaces[parent_surface_index.0];
+                let parent_culling_rect = parent_surface.culling_rect;
+                let parent_vis_spatial_node_index = parent_surface.visibility_spatial_node_index;
 
                 let surface = &mut frame_state
                     .surfaces[raster_config.surface_index.0 as usize];
 
                 surface.update_culling_rect(
+                    parent_vis_spatial_node_index,
                     parent_culling_rect,
                     &raster_config.composite_mode,
                     frame_context,
@@ -311,14 +311,18 @@ pub fn update_prim_visibility(
 
     let mut map_local_to_picture = surface.map_local_to_picture.clone();
 
+    let visibility_spatial_node_index = surface.visibility_spatial_node_index;
+
+    if surface.culling_rect_projection_failed {
+        frame_state.profile.add(profiler::VIS_CULLING_RECT_FALLBACKS, 1);
+    }
+
     let map_surface_to_vis = SpaceMapper::new_with_target(
-        // TODO: switch from root to raster space.
-        frame_context.root_spatial_node_index,
+        visibility_spatial_node_index,
         surface.surface_spatial_node_index,
         surface.culling_rect,
         frame_context.spatial_tree,
     );
-    let visibility_spatial_node_index = surface.visibility_spatial_node_index;
 
     // Snappers into this surface's raster space (the space its content is
     // rasterized in), reused across all clusters/prims in this surface (and a
@@ -370,8 +374,9 @@ pub fn update_prim_visibility(
                 != ClipNodeId::INVALID;
 
             let policy = prim_instance.snap_policy(snaps, frame_state.data_stores);
+            let unsnapped_pattern_rect = frame_state.data_stores.prim_rect(prim_instance);
             let snapped_pattern_rect =
-                snapper.snap_rect_rounded(&prim_instance.unsnapped_pattern_rect, policy.rect);
+                snapper.snap_rect_rounded(&unsnapped_pattern_rect, policy.rect);
 
             // The draw header is accumulated here and pushed only once the
             // primitive is known to be drawn, so culled primitives cost nothing.
@@ -422,7 +427,6 @@ pub fn update_prim_visibility(
                 update_prim_visibility(
                     pic_index,
                     Some(surface_index),
-                    root_culling_rect,
                     store,
                     false,
                     frame_context,
@@ -468,7 +472,6 @@ pub fn update_prim_visibility(
                     local_coverage_rect,
                     &map_local_to_picture,
                     &map_surface_to_vis,
-                    &frame_context.spatial_tree,
                     &mut frame_state.frame_gpu_data.f32,
                     frame_state.resource_cache,
                     &surface_culling_rect,
