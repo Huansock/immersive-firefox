@@ -8942,11 +8942,6 @@
   value: 12
   mirror: always
 
-- name: idle_period.cross_process_scheduling
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-
 #---------------------------------------------------------------------------
 # Prefs starting with "image."
 #---------------------------------------------------------------------------
@@ -13152,6 +13147,13 @@
 - name: media.decoder.recycle.enabled
   type: RelaxedAtomicBool
   value: @IS_ANDROID@
+  mirror: always
+
+# Whether to preserve color metadata from decoded video frames. Disabled by
+# default until encoder color-space signaling is complete (Bug 1869825).
+- name: media.decoder.frame-color-metadata.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
 
 # Should MFR try to skip to the next key frame?
